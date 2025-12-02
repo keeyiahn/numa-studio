@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: numagui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: numagui
+  template:
+    metadata:
+      labels:
+        app: numagui
+    spec:
+      containers:
+        - name: numagui
+          image: numagui:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
