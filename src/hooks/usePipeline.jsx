@@ -17,8 +17,7 @@ export default function usePipeline() {
     //console.log(`connection: ${connection.source} to ${connection.target}`);
   }, []);
 
-  const addNode = useCallback((nd, position) => {
-    const node = JSON.parse(nd);
+  const addNode = useCallback((node, position) => {
     setNodes((nds) => [
       ...nds,
       {
@@ -28,14 +27,29 @@ export default function usePipeline() {
           x: position.x ?? 0,
           y: position.y ?? 0,
         },
-        data: { label: node.id },
+        data: { 
+            label: node.id,
+            config: node.data.config || {}
+         },
       },
     ]);
   }, []);
 
-  useEffect(() => {
-    console.log("Nodes updated:", nodes);
-  }, [nodes]);
+  const editNode = useCallback((nodeId, newId, newData) => {
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === nodeId ? { ...node, id: newId, data: { ...node.data, label: newId, config: newData } } : node
+      )
+    );
+  });
+
+  const editEdge = useCallback((edgeId, newData) => {
+    setEdges((eds) =>
+      eds.map((edge) =>
+        edge.id === edgeId ? { ...edge, data: { ...edge.data, config: newData } } : edge
+      )
+    );
+  });
 
   return {
     nodes,
@@ -43,6 +57,10 @@ export default function usePipeline() {
     handleNodesChange,
     handleEdgesChange,
     handleConnect,
-    addNode
+    addNode,
+    editNode,
+    setNodes,
+    setEdges,
+    editEdge,
   };
 }
