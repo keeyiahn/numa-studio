@@ -67,7 +67,7 @@ export default function useTemplates() {
       
           return {
             ...rest,
-            [newId]: updatedTemplate,         // ew key with updated template
+            [newId]: updatedTemplate,         // new key with updated template
           };
         });
       };
