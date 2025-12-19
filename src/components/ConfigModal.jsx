@@ -31,9 +31,13 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook }) 
             editEdge(id, newConfig);
         };
         if (type === 'new template') {
+          let reactFlowType;
+          if (newConfig.source) reactFlowType = "input";
+          else if (newConfig.sink) reactFlowType = "output";
+          else reactFlowType = undefined;
             addTemplate({
                 id: newId,
-                type: "default",
+                type: reactFlowType,
                 data: { 
                     label: id,
                     config: newConfig

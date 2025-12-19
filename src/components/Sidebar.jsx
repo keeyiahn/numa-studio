@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Plus } from 'lucide-react';
 
 const Sidebar = ({ templatesHook, modalHook }) => {
 
@@ -11,35 +12,60 @@ const Sidebar = ({ templatesHook, modalHook }) => {
     };
 
     const onClickNew = () => {
-        openModal("new template", "new template", 'test')
+        openModal("new template", "new template", {scale: { min: 1}})
     };
+
+    const sources = [];
+    const sinks = [];
+    const udfs = [];
+    
+    Object.entries(templates).forEach(([key, template]) => {
+      if (template.data.config.source) {
+        sources.push([key, template]);
+      } else if (template.data.config.sink) {
+        sinks.push([key, template]);
+      } else {
+        udfs.push([key, template]);
+      }
+    });
+  
+    const renderSection = (title, items) => (
+      <>
+        <div style={styles.sectionHeader}>{title}</div>
+    
+        {items.map(([key, value]) => (
+          <div
+            key={key}
+            style={styles.item}
+            draggable
+            onDragStart={(e) => onDragStart(e, key)}
+            onClick={() => openModal("template", key, value.data.config)}
+          >
+            {key}
+          </div>
+        ))}
+      </>
+    );
 
   return (
     <aside style={styles.sidebar}>
-      <div style={styles.header}>Vertices</div>
-      <button style={styles.addBtn} onClick={onClickNew}>
-        hi
-      </button>
-      {/* <div
-        style={styles.item}
-        draggable
-        onDragStart={(e) => onDragStart(e, "generator-source")}
-        className="sidebar-item"
-      >
-        Generator Source
-      </div> */}
-        {Object.entries(templates).map(([key, value]) => (
-        <div
-          key={key}
-          style={styles.item}
-          draggable
-          onDragStart={(e) => onDragStart(e, key)}
-          onClick={() => openModal("template", key, value.data.config)}
-        >
-          {key}
-        </div>
-        ))}
+      <div style={styles.headerRow} className="section-header">
+        <span style={styles.header} className="section-title">
+          Vertices
+        </span>
 
+        <button
+          className="icon-button"
+          onClick={onClickNew}
+          title="Add template"
+        >
+          +
+        </button>
+      </div>
+
+      {renderSection("Sources", sources)}
+      {renderSection("Sinks", sinks)}
+      {renderSection("UDFs", udfs)}
     </aside>
   );
 };
@@ -57,20 +83,39 @@ const styles = {
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px'
   },
+
+  headerRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '4px 2px'
+  },
+
   header: {
     fontWeight: '600',
     fontSize: '15px',
     color: '#333'
   },
-  addBtn: {
-    padding: '6px 10px',
-    borderRadius: '4px',
-    background: '#1976d2',
-    color: 'white',
+
+  addIconBtn: {
+    width: '26px',
+    height: '26px',
+    borderRadius: '6px',
     border: 'none',
+    background: 'transparent',
     cursor: 'pointer',
-    marginBottom: '8px'
+    fontSize: '18px',
+    lineHeight: '1',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#555'
   },
+
+  addIconBtnHover: {
+    background: 'rgba(0, 0, 0, 0.06)'
+  },
+
   item: {
     padding: '8px 10px',
     background: 'white',
