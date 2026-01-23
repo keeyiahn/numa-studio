@@ -1,16 +1,17 @@
-import React, { useState } from 'react';
-import { Folder, File, ChevronLeft, ChevronRight, Plus, FolderOpen, FileCode, Trash2 } from 'lucide-react';
-import { generateDirectoryStructure } from '../utils/repositoryTools';
-import { importYamlFromString } from '../utils/yamlTools';
+import React, { useState, useEffect } from 'react';
+import { Folder, File, ChevronLeft, ChevronRight, ChevronDown, Plus, FolderOpen, FileCode, Trash2 } from 'lucide-react';
 
-const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHook, pipelineHook, scriptsHook }) => {
-    const { repository, isInitialized, savedRepositories, initializeRepository, openRepository, removeRepository, clearRepository } = repositoryHook;
+const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHook, scriptsHook }) => {
+    const { repository, isInitialized, savedRepositories, initializeRepository, cloneRepository, openRepository, removeRepository, clearRepository, gitCtx } = repositoryHook;
     const { openModal } = modalHook || {};
-    const { setNodes, setEdges } = pipelineHook || {};
     const { setAllScripts } = scriptsHook || {};
     const [showInitModal, setShowInitModal] = useState(false);
     const [showOpenModal, setShowOpenModal] = useState(false);
+    const [showCloneModal, setShowCloneModal] = useState(false);
     const [repoName, setRepoName] = useState('');
+    const [gitUrl, setGitUrl] = useState('');
+    const [fileTree, setFileTree] = useState(null);
+    const [expandedFolders, setExpandedFolders] = useState(new Set());
 
     const handleInitialize = async () => {
         if (repoName.trim()) {
@@ -20,19 +21,22 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
         }
     };
 
+    const handleClone = async () => {
+        if (repoName.trim() && gitUrl.trim()) {
+            try {
+                await cloneRepository(repoName.trim(), gitUrl.trim());
+                setRepoName('');
+                setGitUrl('');
+                setShowCloneModal(false);
+            } catch (error) {
+                alert('Failed to clone repository: ' + error.message);
+            }
+        }
+    };
+
     const handleOpenRepository = async (repoName) => {
         try {
             const loadedRepo = await openRepository(repoName);
-            
-            // Load pipeline.yaml into canvas if it exists
-            if (loadedRepo.pipeline && setNodes && setEdges) {
-                try {
-                    importYamlFromString(loadedRepo.pipeline, setNodes, setEdges);
-                } catch (error) {
-                    console.error('Failed to load pipeline:', error);
-                    alert('Failed to load pipeline: ' + error.message);
-                }
-            }
             
             // Load scripts from repository into scriptsHook
             if (loadedRepo.scripts && setAllScripts) {
@@ -73,38 +77,30 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
         }
     };
 
-    const getFileContent = (filePath) => {
-        if (!repository) return '';
-        const structure = generateDirectoryStructure(repository);
-        if (!structure) return '';
+    const getFileContent = async (filePath) => {
+        if (!gitCtx || !repository) return '';
         
-        // Handle root level files
-        if (filePath === 'pipeline.yaml') {
-            return structure['pipeline.yaml'] || '';
-        }
-        if (filePath === 'requirements.txt') {
-            return structure['requirements.txt'] || '';
-        }
+        const { fs, path } = gitCtx;
+        const repoDir = '/';
         
-        // Handle scripts
-        if (filePath.startsWith('scripts/')) {
-            const fileName = filePath.replace('scripts/', '');
-            return structure.scripts?.[fileName] || '';
+        try {
+            // Read file directly from BrowserFS
+            const fullPath = path.join(repoDir, filePath);
+            const content = await new Promise((resolve, reject) => {
+                fs.readFile(fullPath, (err, data) => {
+                    if (err) {
+                        // File doesn't exist or error reading
+                        resolve('');
+                    } else {
+                        resolve(data.toString());
+                    }
+                });
+            });
+            return content;
+        } catch (error) {
+            console.error('Error reading file from BrowserFS:', error);
+            return '';
         }
-        
-        // Handle dockerfiles (can have nested paths like "script-name/Dockerfile")
-        if (filePath.startsWith('dockerfiles/')) {
-            const filePathClean = filePath.replace('dockerfiles/', '');
-            return structure.dockerfiles?.[filePathClean] || '';
-        }
-        
-        // Handle manifests
-        if (filePath.startsWith('manifests/')) {
-            const fileName = filePath.replace('manifests/', '');
-            return structure.manifests?.[fileName] || '';
-        }
-        
-        return '';
     };
 
     const getFileLanguage = (fileName) => {
@@ -115,98 +111,161 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
         return 'plaintext';
     };
 
-    const handleFileClick = (filePath, fileName) => {
+    const handleFileClick = async (filePath, fileName) => {
         if (!openModal) return;
-        const content = getFileContent(filePath);
+        const content = await getFileContent(filePath);
         const language = getFileLanguage(fileName);
         openModal('view file', filePath, { content, language, fileName });
     };
 
+    // Load file tree from BrowserFS
+    useEffect(() => {
+        const loadFileTree = async () => {
+            if (!gitCtx || !repository) {
+                setFileTree(null);
+                return;
+            }
+
+            const { fs, path } = gitCtx;
+            const repoDir = '/';
+
+            const readDir = async (dirPath, parentPath = '') => {
+                const items = [];
+                try {
+                    const entries = await new Promise((resolve, reject) => {
+                        fs.readdir(path.join(repoDir, dirPath), (err, entries) => {
+                            if (err) resolve([]);
+                            else resolve(entries || []);
+                        });
+                    });
+
+                    for (const entry of entries) {
+                        // Skip hidden files and folders (starting with .)
+                        if (entry.startsWith('.')) continue;
+                        
+                        const fullPath = path.join(repoDir, dirPath, entry);
+                        const relativePath = parentPath ? `${parentPath}/${entry}` : entry;
+                        
+                        try {
+                            const stat = await new Promise((resolve, reject) => {
+                                fs.stat(fullPath, (err, stat) => {
+                                    if (err) reject(err);
+                                    else resolve(stat);
+                                });
+                            });
+
+                            if (stat.isDirectory()) {
+                                // Recursively read children and nest them
+                                const children = await readDir(path.join(dirPath, entry), relativePath);
+                                if (children.length > 0) {
+                                    items.push({
+                                        name: entry,
+                                        type: 'folder',
+                                        icon: FolderOpen,
+                                        children,
+                                        path: relativePath
+                                    });
+                                }
+                            } else {
+                                items.push({
+                                    name: entry,
+                                    type: 'file',
+                                    icon: entry.endsWith('.py') ? FileCode : File,
+                                    path: relativePath
+                                });
+                            }
+                        } catch (e) {
+                            // Skip files we can't stat
+                        }
+                    }
+                } catch (e) {
+                    // Directory doesn't exist or error reading
+                }
+                return items;
+            };
+
+            const files = await readDir('');
+            setFileTree(files);
+        };
+
+        loadFileTree();
+    }, [gitCtx, repository]);
+
+    const toggleFolder = (folderPath) => {
+        setExpandedFolders(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(folderPath)) {
+                newSet.delete(folderPath);
+            } else {
+                newSet.add(folderPath);
+            }
+            return newSet;
+        });
+    };
+
     const renderFileTree = () => {
-        if (!isInitialized || !repository) {
+        if (!isInitialized || !repository || !fileTree) {
             return null;
         }
 
-        const structure = generateDirectoryStructure(repository);
-        const files = [];
-        
-        // Pipeline file
-        if (structure && structure['pipeline.yaml']) {
-            files.push({ name: 'pipeline.yaml', type: 'file', icon: File });
-        }
+        const files = fileTree;
 
-        // Requirements file
-        if (structure && structure['requirements.txt']) {
-            files.push({ name: 'requirements.txt', type: 'file', icon: FileCode });
-        }
-
-        // Scripts directory
-        const scriptFiles = structure?.scripts ? Object.keys(structure.scripts) : [];
-        if (scriptFiles.length > 0) {
-            files.push({ 
-                name: 'scripts', 
-                type: 'folder', 
-                icon: FolderOpen, 
-                children: scriptFiles.map(f => ({ name: f, type: 'file', icon: FileCode }))
-            });
-        }
-
-        // Dockerfiles directory
-        const dockerfileFiles = structure?.dockerfiles ? Object.keys(structure.dockerfiles) : [];
-        if (dockerfileFiles.length > 0) {
-            files.push({ 
-                name: 'dockerfiles', 
-                type: 'folder', 
-                icon: FolderOpen, 
-                children: dockerfileFiles.map(f => ({ name: f, type: 'file', icon: File }))
-            });
-        }
-
-        // Manifests directory (only show if there are any custom manifests)
-        const manifestFiles = structure?.manifests ? Object.keys(structure.manifests) : [];
-        if (manifestFiles.length > 0) {
-            files.push({ 
-                name: 'manifests', 
-                type: 'folder', 
-                icon: FolderOpen,
-                children: manifestFiles.map(f => ({ name: f, type: 'file', icon: File }))
-            });
-        }
-
-        const renderFileItem = (file, depth = 0, key = '', parentPath = '') => {
+        const renderFileItem = (file, depth = 0, key = '') => {
             const isFolder = file.type === 'folder';
-            const Icon = file.icon || (isFolder ? FolderOpen : File);
+            const currentPath = file.path || file.name;
+            const isExpanded = expandedFolders.has(currentPath);
+            const hasChildren = file.children && file.children.length > 0;
+            
+            // Use closed folder icon when collapsed, open when expanded
+            const FolderIcon = isExpanded ? FolderOpen : Folder;
+            const Icon = isFolder ? FolderIcon : (file.icon || File);
             const itemKey = key || file.name;
-            const currentPath = parentPath ? `${parentPath}/${file.name}` : file.name;
             
             return (
-                <div key={itemKey} style={{ marginLeft: `${depth * 16}px`, marginBottom: '2px' }}>
+                <div key={itemKey} style={{ marginBottom: '2px' }}>
                     <div 
                         style={{
                             ...styles.fileItem,
-                            cursor: isFolder ? 'default' : 'pointer'
+                            cursor: 'pointer',
+                            paddingLeft: `${depth * 16 + 4}px`
                         }}
-                        onClick={() => !isFolder && handleFileClick(currentPath, file.name)}
+                        onClick={() => {
+                            if (isFolder) {
+                                toggleFolder(currentPath);
+                            } else {
+                                handleFileClick(currentPath, file.name);
+                            }
+                        }}
                         onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#f8fafc';
                             if (!isFolder) {
-                                e.currentTarget.style.background = '#f8fafc';
                                 e.currentTarget.style.color = '#3b82f6';
                             }
                         }}
                         onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'transparent';
                             if (!isFolder) {
-                                e.currentTarget.style.background = 'transparent';
                                 e.currentTarget.style.color = '#475569';
                             }
                         }}
                     >
+                        {isFolder && hasChildren && (
+                            <span style={{ marginRight: '4px', display: 'inline-flex', alignItems: 'center' }}>
+                                {isExpanded ? (
+                                    <ChevronDown size={12} style={{ color: '#64748b' }} />
+                                ) : (
+                                    <ChevronRight size={12} style={{ color: '#64748b' }} />
+                                )}
+                            </span>
+                        )}
+                        {!isFolder && <span style={{ width: '16px', display: 'inline-block' }} />}
                         <Icon size={14} style={{ marginRight: '6px', color: isFolder ? '#3b82f6' : '#64748b' }} />
                         <span style={styles.fileName}>{file.name}</span>
                     </div>
-                    {file.children && file.children.length > 0 && (
+                    {isFolder && hasChildren && isExpanded && (
                         <div style={styles.children}>
                             {file.children.map((child, childIndex) => 
-                                renderFileItem(child, depth + 1, `${itemKey}-${childIndex}`, currentPath)
+                                renderFileItem(child, depth + 1, `${itemKey}-${childIndex}`)
                             )}
                         </div>
                     )}
@@ -343,6 +402,21 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                                 <Plus size={16} style={{ marginRight: '8px' }} />
                                 New Repository
                             </button>
+                            <button
+                                onClick={() => setShowCloneModal(true)}
+                                style={styles.cloneRepoButton}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = '#2563eb';
+                                    e.currentTarget.style.transform = 'translateY(-1px)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = '#3b82f6';
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                }}
+                            >
+                                <FolderOpen size={16} style={{ marginRight: '8px' }} />
+                                Clone Repo
+                            </button>
                         </div>
                     </div>
                 ) : (
@@ -450,6 +524,63 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                                 style={styles.modalButtonSecondary}
                             >
                                 Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showCloneModal && (
+                <div style={styles.modalOverlay} onClick={() => setShowCloneModal(false)}>
+                    <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+                        <h3 style={styles.modalTitle}>Clone Repository</h3>
+                        <p style={styles.modalDescription}>Enter repository name and GitHub URL</p>
+                        <input
+                            type="text"
+                            value={repoName}
+                            onChange={(e) => setRepoName(e.target.value)}
+                            placeholder="my-cloned-repo"
+                            style={styles.modalInput}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleClone();
+                                }
+                            }}
+                        />
+                        <input
+                            type="text"
+                            value={gitUrl}
+                            onChange={(e) => setGitUrl(e.target.value)}
+                            placeholder="https://github.com/username/repo.git"
+                            style={styles.modalInput}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleClone();
+                                }
+                            }}
+                            autoFocus
+                        />
+                        <div style={styles.modalButtons}>
+                            <button
+                                onClick={() => {
+                                    setShowCloneModal(false);
+                                    setRepoName('');
+                                    setGitUrl('');
+                                }}
+                                style={styles.modalButtonSecondary}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleClone}
+                                disabled={!repoName.trim() || !gitUrl.trim()}
+                                style={{
+                                    ...styles.modalButton,
+                                    opacity: (repoName.trim() && gitUrl.trim()) ? 1 : 0.5,
+                                    cursor: (repoName.trim() && gitUrl.trim()) ? 'pointer' : 'not-allowed'
+                                }}
+                            >
+                                Clone
                             </button>
                         </div>
                     </div>
@@ -606,6 +737,21 @@ const styles = {
         fontWeight: '600',
         transition: 'all 0.2s ease',
         boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
+    },
+    cloneRepoButton: {
+        display: 'flex',
+        alignItems: 'center',
+        padding: '10px 16px',
+        background: '#3b82f6',
+        color: 'white',
+        border: 'none',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        fontSize: '13px',
+        fontWeight: '600',
+        transition: 'all 0.2s ease',
+        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+        marginTop: '10px'
     },
     content: {
         flex: 1,

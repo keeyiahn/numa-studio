@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
-import { generateDockerfile } from '../utils/repositoryTools';
-import { initGitRepository, updateGitRepository } from '../utils/gitTools';
-import { saveRepository, listRepositories, loadRepository, deleteRepository } from '../utils/repositoryStorage';
+import { initGitRepository, cloneGitRepository, updateGitRepository, gitRepositoryExists, listRepositories, loadRepository, deleteRepository } from '../utils/gitTools';
 
 export default function useRepository() {
     const [repository, setRepository] = useState(null);
     const [isInitialized, setIsInitialized] = useState(false);
-    const [gitFS, setGitFS] = useState(null);
+    const [gitCtx, setGitCtx] = useState(null);
     const [savedRepositories, setSavedRepositories] = useState([]);
 
     // Load list of saved repositories on mount
@@ -14,15 +12,8 @@ export default function useRepository() {
         refreshRepositoryList();
     }, []);
 
-    // Save repository to IndexedDB whenever it changes
-    useEffect(() => {
-        if (repository && isInitialized) {
-            saveRepository(repository).catch(err => {
-                console.error('Failed to save repository:', err);
-            });
-            refreshRepositoryList();
-        }
-    }, [repository, isInitialized]);
+    // Note: Repository is now persisted to BrowserFS automatically via gitTools
+    // No need for separate save operation - it's handled in updatePipeline, addScript, etc.
 
     const refreshRepositoryList = async () => {
         try {
@@ -45,23 +36,43 @@ export default function useRepository() {
         setRepository(newRepo);
         setIsInitialized(true);
         
-        // Initialize git repository
+        // Initialize git repository (new repository, so existingGit = false)
+        // This will also persist to BrowserFS and add to registry
         try {
-            const fs = await initGitRepository(newRepo);
-            setGitFS(fs);
+            const ctx = await initGitRepository(newRepo, false);
+            setGitCtx(ctx);
         } catch (error) {
             console.error('Failed to initialize git repository:', error);
         }
         
-        // Save to IndexedDB
-        await saveRepository(newRepo);
         await refreshRepositoryList();
         
         return newRepo;
     };
 
+    const cloneRepository = async (name, gitUrl) => {
+        // Clone repository from GitHub
+        try {
+            const ctx = await cloneGitRepository(name, gitUrl);
+            setGitCtx(ctx);
+            
+            // Load the cloned repository
+            const loadedRepo = await loadRepository(name);
+            setRepository(loadedRepo);
+            setIsInitialized(true);
+            
+            await refreshRepositoryList();
+            
+            return loadedRepo;
+        } catch (error) {
+            console.error('Failed to clone repository:', error);
+            throw error;
+        }
+    };
+
     const openRepository = async (name) => {
         try {
+            // Load repository from BrowserFS
             const loadedRepo = await loadRepository(name);
             if (!loadedRepo) {
                 throw new Error(`Repository "${name}" not found`);
@@ -70,12 +81,13 @@ export default function useRepository() {
             setRepository(loadedRepo);
             setIsInitialized(true);
             
-            // Initialize git repository from loaded repo
+            // Check if Git repository already exists, then initialize/load it
             try {
-                const fs = await initGitRepository(loadedRepo);
-                setGitFS(fs);
+                const exists = await gitRepositoryExists(loadedRepo);
+                const ctx = await initGitRepository(loadedRepo, exists);
+                setGitCtx(ctx);
             } catch (error) {
-                console.error('Failed to initialize git repository:', error);
+                console.error('Failed to load git repository:', error);
             }
             
             return loadedRepo;
@@ -87,7 +99,18 @@ export default function useRepository() {
 
     const removeRepository = async (name) => {
         try {
+            // Delete from BrowserFS registry (this also deletes the IndexedDB store)
             await deleteRepository(name);
+            
+            // Also delete templates for this repository
+            try {
+                const { deleteTemplatesForRepo } = await import('../utils/templateStorage');
+                await deleteTemplatesForRepo(name);
+            } catch (error) {
+                console.warn('Failed to delete templates for repository:', error);
+                // Don't fail the entire operation if template deletion fails
+            }
+            
             await refreshRepositoryList();
             // If the current repository is being deleted, clear it
             if (repository?.name === name) {
@@ -102,7 +125,7 @@ export default function useRepository() {
     const clearRepository = () => {
         setRepository(null);
         setIsInitialized(false);
-        setGitFS(null);
+        setGitCtx(null);
     };
 
     const updatePipeline = async (pipeline) => {
@@ -115,8 +138,8 @@ export default function useRepository() {
         
         // Update git repository
         try {
-            const fs = await updateGitRepository(gitFS, updatedRepo, 'Update pipeline.yaml');
-            setGitFS(fs);
+            const ctx = await updateGitRepository(gitCtx, updatedRepo, 'Update pipeline.yaml');
+            setGitCtx(ctx);
         } catch (error) {
             console.error('Failed to commit pipeline changes:', error);
         }
@@ -142,8 +165,8 @@ export default function useRepository() {
         
         // Update git repository
         try {
-            const fs = await updateGitRepository(gitFS, updatedRepo, 'Update UDF scripts');
-            setGitFS(fs);
+            const ctx = await updateGitRepository(gitCtx, updatedRepo, 'Update UDF scripts');
+            setGitCtx(ctx);
         } catch (error) {
             console.error('Failed to commit script changes:', error);
         }
@@ -163,8 +186,8 @@ export default function useRepository() {
         
         // Update git repository
         try {
-            const fs = await updateGitRepository(gitFS, updatedRepo, `Add UDF script: ${scriptName}`);
-            setGitFS(fs);
+            const ctx = await updateGitRepository(gitCtx, updatedRepo, `Add UDF script: ${scriptName}`);
+            setGitCtx(ctx);
         } catch (error) {
             console.error('Failed to commit script addition:', error);
         }
@@ -187,8 +210,8 @@ export default function useRepository() {
         
         // Update git repository
         try {
-            const fs = await updateGitRepository(gitFS, updatedRepo, `Remove UDF script: ${scriptName}`);
-            setGitFS(fs);
+            const ctx = await updateGitRepository(gitCtx, updatedRepo, `Remove UDF script: ${scriptName}`);
+            setGitCtx(ctx);
         } catch (error) {
             console.error('Failed to commit script removal:', error);
         }
@@ -218,9 +241,11 @@ export default function useRepository() {
 
     return {
         repository,
+        gitCtx,
         isInitialized,
         savedRepositories,
         initializeRepository,
+        cloneRepository,
         openRepository,
         removeRepository,
         clearRepository,

@@ -117,4 +117,22 @@ export const exportPipeline = (nodes, edges) => {
   export function importYamlFromString(yamlString, setNodes, setEdges) {
     loadPipelineFromYaml(yamlString, setNodes, setEdges);
   }
+
+  // Validate if YAML string is a valid Numaflow pipeline
+  export function isValidPipeline(yamlString) {
+    try {
+      const parsed = yaml.load(yamlString);
+      
+      // Check for required pipeline fields
+      if (parsed?.apiVersion === 'numaflow.numaproj.io/v1alpha1' && 
+          parsed?.kind === 'Pipeline' &&
+          parsed?.spec?.vertices) {
+        return { valid: true, error: null };
+      }
+      
+      return { valid: false, error: 'Not a valid Numaflow pipeline' };
+    } catch (error) {
+      return { valid: false, error: error.message };
+    }
+  }
   

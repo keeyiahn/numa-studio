@@ -11,6 +11,8 @@ export default function usePipeline() {
   
   const [nodes, setNodes, handleNodesChange] = useNodesState([]);
   const [edges, setEdges, handleEdgesChange] = useEdgesState([]);
+  const [isPipelineLoaded, setIsPipelineLoaded] = useState(false);
+  const [currentPipelinePath, setCurrentPipelinePath] = useState(null);
 
   const handleConnect = useCallback((connection) => {
     setEdges((eds) => addEdge(connection, eds));
@@ -51,6 +53,18 @@ export default function usePipeline() {
     );
   });
 
+  // Mark pipeline as loaded (called when pipeline.yaml is loaded into canvas)
+  const markPipelineLoaded = useCallback((filePath = null) => {
+    setIsPipelineLoaded(true);
+    setCurrentPipelinePath(filePath);
+  }, []);
+
+  // Clear pipeline loaded state (called when repository changes or canvas is cleared)
+  const clearPipelineLoaded = useCallback(() => {
+    setIsPipelineLoaded(false);
+    setCurrentPipelinePath(null);
+  }, []);
+
   return {
     nodes,
     edges,
@@ -62,5 +76,9 @@ export default function usePipeline() {
     setNodes,
     setEdges,
     editEdge,
+    isPipelineLoaded,
+    currentPipelinePath,
+    markPipelineLoaded,
+    clearPipelineLoaded,
   };
 }

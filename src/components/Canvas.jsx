@@ -9,7 +9,8 @@ import '@xyflow/react/dist/style.css';
 import {
     useCallback,
     useRef,
-    useState
+    useState,
+    useEffect
 } from "react";
 import { Download, Upload, FileText, GitCommit } from 'lucide-react';
 
@@ -19,9 +20,9 @@ import yaml from 'js-yaml';
 
 export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
 
-    const { nodes, edges, handleNodesChange, handleEdgesChange, handleConnect, addNode, setNodes, setEdges } = pipelineHook;
+    const { nodes, edges, handleNodesChange, handleEdgesChange, handleConnect, addNode, setNodes, setEdges, isPipelineLoaded, currentPipelinePath, clearPipelineLoaded } = pipelineHook;
     const { isOpen, modalContent, openModal, closeModal } = modalHook;
-    const { isInitialized, updatePipeline } = repositoryHook || {};
+    const { isInitialized, updatePipeline, repository } = repositoryHook || {};
     const { screenToFlowPosition } = useReactFlow();
     const fileInputRef = useRef(null);
     const [isImporting, setIsImporting] = useState(false);
@@ -96,6 +97,10 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
         setIsImporting(true);
         try {
           await importYaml(file, setNodes, setEdges);
+          // Mark pipeline as loaded when imported (no file path since it's from external file)
+          if (pipelineHook?.markPipelineLoaded) {
+            pipelineHook.markPipelineLoaded(null);
+          }
         } catch (err) {
           alert("Import failed: " + err.message);
         } finally {
@@ -111,9 +116,21 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
         fileInputRef.current?.click();
     };
 
+    // Clear pipeline loaded state when repository changes
+    useEffect(() => {
+        if (!isInitialized || !repository) {
+            clearPipelineLoaded();
+        }
+    }, [isInitialized, repository?.name, clearPipelineLoaded]);
+
     const onClickCommit = async () => {
         if (!isInitialized) {
             alert('Please initialize a repository first');
+            return;
+        }
+        
+        if (!isPipelineLoaded) {
+            alert('Please load pipeline.yaml into the canvas first. Click on pipeline.yaml in the repository and select "Edit in Canvas".');
             return;
         }
         
@@ -155,26 +172,32 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
                     
                     <button
                         onClick={onClickCommit}
-                        disabled={!isInitialized || isCommitting}
+                        disabled={!isInitialized || !isPipelineLoaded || isCommitting}
                         style={{
                             ...styles.toolbarButton,
                             ...styles.toolbarButtonCommit,
-                            opacity: (!isInitialized || isCommitting) ? 0.6 : 1,
-                            cursor: (!isInitialized || isCommitting) ? 'not-allowed' : 'pointer'
+                            opacity: (!isInitialized || !isPipelineLoaded || isCommitting) ? 0.6 : 1,
+                            cursor: (!isInitialized || !isPipelineLoaded || isCommitting) ? 'not-allowed' : 'pointer'
                         }}
                         onMouseEnter={(e) => {
-                            if (isInitialized && !isCommitting) {
+                            if (isInitialized && isPipelineLoaded && !isCommitting) {
                                 e.currentTarget.style.background = '#059669';
                                 e.currentTarget.style.transform = 'translateY(-1px)';
                             }
                         }}
                         onMouseLeave={(e) => {
-                            if (isInitialized && !isCommitting) {
+                            if (isInitialized && isPipelineLoaded && !isCommitting) {
                                 e.currentTarget.style.background = '#10b981';
                                 e.currentTarget.style.transform = 'translateY(0)';
                             }
                         }}
-                        title={isInitialized ? "Commit pipeline to repository" : "Initialize a repository first"}
+                        title={
+                            !isInitialized 
+                                ? "Initialize a repository first" 
+                                : !isPipelineLoaded 
+                                    ? "Load pipeline.yaml into canvas first (click pipeline.yaml and select 'Edit in Canvas')"
+                                    : "Commit pipeline to repository"
+                        }
                     >
                         <GitCommit size={16} style={{ marginRight: '8px' }} />
                         {isCommitting ? 'Committing...' : 'Commit Pipeline'}
@@ -216,6 +239,49 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
                     style={styles.hiddenFileInput}
                 />
             </div>
+            
+            {/* Current Pipeline Indicator */}
+            {isInitialized && isPipelineLoaded && (
+                <div style={{
+                    position: 'absolute',
+                    top: '60px',
+                    left: '20px',
+                    right: '20px',
+                    padding: '8px 12px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    color: '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    zIndex: 10,
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
+                }}>
+                    <FileText size={14} color="#64748b" />
+                    <span style={{ fontWeight: 500, color: '#475569' }}>Editing:</span>
+                    {currentPipelinePath ? (
+                        <span style={{ 
+                            fontFamily: 'monospace',
+                            color: '#0f172a',
+                            background: '#f1f5f9',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '12px'
+                        }}>
+                            {currentPipelinePath}
+                        </span>
+                    ) : (
+                        <span style={{ 
+                            color: '#94a3b8',
+                            fontStyle: 'italic'
+                        }}>
+                            Imported pipeline (not from repository)
+                        </span>
+                    )}
+                </div>
+            )}
             
             <ReactFlow
                 nodes={nodes}

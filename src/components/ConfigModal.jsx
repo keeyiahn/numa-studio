@@ -1,14 +1,14 @@
 import { Editor } from '@monaco-editor/react';
-import { parseYaml, loadYaml } from '../utils/yamlTools';
+import { parseYaml, loadYaml, isValidPipeline, importYamlFromString } from '../utils/yamlTools';
 import { useState, useEffect } from 'react';
 import yaml from 'js-yaml';
-import { Download, FileText } from 'lucide-react';
+import { Download, FileText, Edit3 } from 'lucide-react';
 
 export default function ConfigModal({ modalHook, pipelineHook, templatesHook, scriptsHook }) {
 
     const { newId, setNewId, type ,id, setId, isOpen, modalContent, openModal, closeModal } = modalHook;
     const { editTemplate, addTemplate } = templatesHook;
-    const { editNode, editEdge } = pipelineHook;
+    const { editNode, editEdge, setNodes, setEdges } = pipelineHook;
     const { scripts } = scriptsHook || { scripts: {} };
 
     const [ text, setText ] = useState(parseYaml(modalContent).data);
@@ -18,6 +18,39 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook, sc
     // For file viewing mode
     const isViewFile = type === 'view file';
     const fileInfo = isViewFile && modalContent ? modalContent : null;
+    
+    // Check if the file is a valid pipeline
+    const [isValidPipelineFile, setIsValidPipelineFile] = useState(false);
+    const [pipelineValidationError, setPipelineValidationError] = useState(null);
+    
+    useEffect(() => {
+        if (isViewFile && fileInfo?.content) {
+            const validation = isValidPipeline(fileInfo.content);
+            setIsValidPipelineFile(validation.valid);
+            setPipelineValidationError(validation.error);
+        } else {
+            setIsValidPipelineFile(false);
+            setPipelineValidationError(null);
+        }
+    }, [isViewFile, fileInfo]);
+    
+    const handleEditInCanvas = () => {
+        if (!fileInfo?.content || !setNodes || !setEdges) return;
+        
+        try {
+            importYamlFromString(fileInfo.content, setNodes, setEdges);
+            // Mark pipeline as loaded with file path
+            // The id parameter contains the filePath when type is 'view file'
+            const filePath = type === 'view file' ? id : null;
+            if (pipelineHook?.markPipelineLoaded) {
+                pipelineHook.markPipelineLoaded(filePath);
+            }
+            closeModal();
+            // Optional: Show success message
+        } catch (error) {
+            alert('Failed to load pipeline into canvas: ' + error.message);
+        }
+    };
 
     // Generate template based on vertex type
     const generateTemplate = (vertType, scriptName = '') => {
@@ -286,6 +319,30 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook, sc
               >
                 {isViewFile ? 'Close' : 'Cancel'}
               </button>
+              {isViewFile && isValidPipelineFile && (
+                <button 
+                  style={styles.buttonEditCanvas} 
+                  onClick={handleEditInCanvas}
+                  onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#059669';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 4px 6px rgba(5, 150, 105, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#10b981';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
+                  }}
+                >
+                  <Edit3 size={16} style={{ marginRight: '8px' }} />
+                  Edit in Canvas
+                </button>
+              )}
+              {isViewFile && !isValidPipelineFile && fileInfo?.fileName?.endsWith('.yaml') && (
+                <div style={styles.validationMessage}>
+                  {pipelineValidationError || 'Not a valid pipeline file'}
+                </div>
+              )}
               {!isViewFile && (
                 <button 
                   style={styles.button} 
@@ -460,6 +517,28 @@ const styles = {
     },
     previewContent: {
         border: 'none'
-      }
+    },
+    buttonEditCanvas: {
+        padding: '10px 20px',
+        background: '#10b981',
+        color: 'white',
+        border: 'none',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: '600',
+        transition: 'all 0.2s ease',
+        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+        display: 'flex',
+        alignItems: 'center'
+    },
+    validationMessage: {
+        padding: '8px 12px',
+        background: '#fef2f2',
+        color: '#dc2626',
+        borderRadius: '6px',
+        fontSize: '13px',
+        border: '1px solid #fecaca'
+    }
   };
 

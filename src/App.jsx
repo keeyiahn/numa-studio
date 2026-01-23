@@ -19,11 +19,11 @@ import useRepository from './hooks/useRepository';
 export default function App() {
 
   const pipelineHook = usePipeline();
-  const templatesHook = useTemplates();
+  const repositoryHook = useRepository();
+  const templatesHook = useTemplates(repositoryHook);
   const modalHook = useModal();
   const scriptModalHook = useModal();
   const scriptsHook = useScripts();
-  const repositoryHook = useRepository();
   
   const [directorySidebarVisible, setDirectorySidebarVisible] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
@@ -73,7 +73,6 @@ export default function App() {
         isVisible={directorySidebarVisible}
         onToggle={() => setDirectorySidebarVisible(!directorySidebarVisible)}
         modalHook={modalHook}
-        pipelineHook={pipelineHook}
         scriptsHook={scriptsHook}
       />
       <Sidebar 
