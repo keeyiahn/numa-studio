@@ -55,15 +55,16 @@ async function writeFileEnsuringDir(fs, pathMod, fullPath, data) {
     await pWriteFile(fs, fullPath, data);
 }
 
-async function syncRepositoryFiles(fs, pathMod, repoDir, repository, createRequirementsTxt = false) {
+async function syncRepositoryFiles(fs, pathMod, repoDir, repository, createRequirementsTxt = false, pipelinePath = 'pipeline.yaml') {
     if (!repository) return;
 
     // Note: We don't store repo-metadata.json anymore - metadata is tracked in git config and registry
     // The repository name and timestamps are available from git commits and the registry
 
-    // pipeline.yaml
+    // pipeline file (use provided path or default to pipeline.yaml)
     if (repository.pipeline) {
-        await writeFileEnsuringDir(fs, pathMod, pathMod.join(repoDir, 'pipeline.yaml'), repository.pipeline);
+        const pathToUse = repository.pipelinePath || pipelinePath;
+        await writeFileEnsuringDir(fs, pathMod, pathMod.join(repoDir, pathToUse), repository.pipeline);
     }
 
     // requirements.txt - only create when initializing a new repository (not when cloning)
@@ -125,6 +126,46 @@ async function getAllFiles(fs, pathMod, baseDir) {
 
     await walk(baseDir);
     return results;
+}
+
+// Check if any file in the repository contains a Numaflow pipeline structure
+export async function hasPipelineFile(gitCtx) {
+    if (!gitCtx) return false;
+    
+    const { fs, path } = gitCtx;
+    const repoDir = '/';
+    
+    try {
+        const allFiles = await getAllFiles(fs, path, repoDir);
+        
+        // Check YAML files for pipeline structure
+        for (const filePath of allFiles) {
+            if (!filePath.endsWith('.yaml') && !filePath.endsWith('.yml')) {
+                continue;
+            }
+            
+            try {
+                const content = await pReadFile(fs, filePath);
+                const contentStr = content.toString();
+                
+                // Quick check for pipeline markers
+                if (contentStr.includes('apiVersion:') && 
+                    contentStr.includes('numaflow.numaproj.io/v1alpha1') &&
+                    contentStr.includes('kind:') &&
+                    contentStr.includes('Pipeline')) {
+                    return true;
+                }
+            } catch (e) {
+                // Skip files that can't be read
+                continue;
+            }
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('Error checking for pipeline files:', error);
+        return false;
+    }
 }
 
 // Load repository metadata and files from BrowserFS
@@ -303,7 +344,7 @@ export async function addAndCommit(gitCtx, message = 'Update repository') {
 }
 
 // Update git repository with new repository state
-export async function updateGitRepository(gitCtx, repository, commitMessage = 'Update repository') {
+export async function updateGitRepository(gitCtx, repository, commitMessage = 'Update repository', pipelinePath = 'pipeline.yaml') {
     if (!gitCtx) {
         // Initialize if not already initialized
         gitCtx = await initGitRepository(repository, false);
@@ -312,7 +353,7 @@ export async function updateGitRepository(gitCtx, repository, commitMessage = 'U
     const { fs, path, dir } = gitCtx;
 
     // Sync filesystem with current repository state (don't create requirements.txt on updates)
-    await syncRepositoryFiles(fs, path, dir, repository, false);
+    await syncRepositoryFiles(fs, path, dir, repository, false, pipelinePath);
 
     // Add and commit changes
     await addAndCommit({ fs, path, dir }, commitMessage);

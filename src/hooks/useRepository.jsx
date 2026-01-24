@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { initGitRepository, cloneGitRepository, updateGitRepository, gitRepositoryExists, listRepositories, loadRepository, deleteRepository } from '../utils/gitTools';
+import { initGitRepository, cloneGitRepository, updateGitRepository, gitRepositoryExists, listRepositories, loadRepository, deleteRepository, hasPipelineFile } from '../utils/gitTools';
 
 export default function useRepository() {
     const [repository, setRepository] = useState(null);
@@ -38,8 +38,9 @@ export default function useRepository() {
         
         // Initialize git repository (new repository, so existingGit = false)
         // This will also persist to BrowserFS and add to registry
+        let ctx = null;
         try {
-            const ctx = await initGitRepository(newRepo, false);
+            ctx = await initGitRepository(newRepo, false);
             setGitCtx(ctx);
         } catch (error) {
             console.error('Failed to initialize git repository:', error);
@@ -47,7 +48,8 @@ export default function useRepository() {
         
         await refreshRepositoryList();
         
-        return newRepo;
+        // New repository has no pipeline file
+        return { ...newRepo, hasPipelineFile: false };
     };
 
     const cloneRepository = async (name, gitUrl) => {
@@ -61,9 +63,12 @@ export default function useRepository() {
             setRepository(loadedRepo);
             setIsInitialized(true);
             
+            // Check if any pipeline file exists in the cloned repository
+            const hasPipeline = await hasPipelineFile(ctx);
+            
             await refreshRepositoryList();
             
-            return loadedRepo;
+            return { ...loadedRepo, hasPipelineFile: hasPipeline };
         } catch (error) {
             console.error('Failed to clone repository:', error);
             throw error;
@@ -82,15 +87,19 @@ export default function useRepository() {
             setIsInitialized(true);
             
             // Check if Git repository already exists, then initialize/load it
+            let ctx = null;
             try {
                 const exists = await gitRepositoryExists(loadedRepo);
-                const ctx = await initGitRepository(loadedRepo, exists);
+                ctx = await initGitRepository(loadedRepo, exists);
                 setGitCtx(ctx);
             } catch (error) {
                 console.error('Failed to load git repository:', error);
             }
             
-            return loadedRepo;
+            // Check if any pipeline file exists in the repository
+            const hasPipeline = ctx ? await hasPipelineFile(ctx) : false;
+            
+            return { ...loadedRepo, hasPipelineFile: hasPipeline };
         } catch (error) {
             console.error('Failed to open repository:', error);
             throw error;
@@ -128,17 +137,21 @@ export default function useRepository() {
         setGitCtx(null);
     };
 
-    const updatePipeline = async (pipeline) => {
+    const updatePipeline = async (pipeline, isNewPipeline = false, pipelinePath = 'pipeline.yaml') => {
         if (!repository) return;
         const updatedRepo = {
             ...repository,
-            pipeline: pipeline
+            pipeline: pipeline,
+            pipelinePath: pipelinePath // Store the path for this pipeline
         };
         setRepository(updatedRepo);
         
         // Update git repository
         try {
-            const ctx = await updateGitRepository(gitCtx, updatedRepo, 'Update pipeline.yaml');
+            const commitMessage = isNewPipeline 
+                ? `Create ${pipelinePath}` 
+                : `Update ${pipelinePath}`;
+            const ctx = await updateGitRepository(gitCtx, updatedRepo, commitMessage, pipelinePath);
             setGitCtx(ctx);
         } catch (error) {
             console.error('Failed to commit pipeline changes:', error);

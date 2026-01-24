@@ -74,6 +74,7 @@ export default function App() {
         onToggle={() => setDirectorySidebarVisible(!directorySidebarVisible)}
         modalHook={modalHook}
         scriptsHook={scriptsHook}
+        pipelineHook={pipelineHook}
       />
       <Sidebar 
         templatesHook={templatesHook}

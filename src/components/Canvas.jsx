@@ -129,15 +129,56 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
             return;
         }
         
-        if (!isPipelineLoaded) {
-            alert('Please load pipeline.yaml into the canvas first. Click on pipeline.yaml in the repository and select "Edit in Canvas".');
+        // Allow commit even if pipeline not explicitly loaded (for new pipelines)
+        // But require at least some nodes/edges to be meaningful
+        if (nodes.length === 0 && edges.length === 0) {
+            alert('Please add at least one node to the pipeline before committing.');
             return;
+        }
+        
+        // If creating a new pipeline, prompt for filename
+        let pipelinePath = currentPipelinePath;
+        if (!pipelinePath) {
+            const fileName = prompt('Enter filename for the pipeline (e.g., pipeline.yaml):', 'pipeline.yaml');
+            if (!fileName) {
+                // User cancelled
+                return;
+            }
+            
+            // Validate and sanitize filename
+            let sanitized = fileName.trim();
+            if (!sanitized) {
+                alert('Filename cannot be empty');
+                return;
+            }
+            
+            // Ensure it ends with .yaml or .yml
+            if (!sanitized.endsWith('.yaml') && !sanitized.endsWith('.yml')) {
+                sanitized += '.yaml';
+            }
+            
+            // Basic validation: no path separators (for now, save in root)
+            if (sanitized.includes('/') || sanitized.includes('\\')) {
+                alert('Filename cannot contain path separators. Please enter just the filename.');
+                return;
+            }
+            
+            pipelinePath = sanitized;
         }
         
         setIsCommitting(true);
         try {
             const pipelineYaml = exportPipeline(nodes, edges);
-            await updatePipeline(pipelineYaml);
+            // If currentPipelinePath is null, we're creating a new pipeline
+            // Otherwise, we're updating an existing one
+            const isNewPipeline = !currentPipelinePath;
+            await updatePipeline(pipelineYaml, isNewPipeline, pipelinePath);
+            
+            // If this was a new pipeline, mark it as loaded with the provided path
+            if (isNewPipeline && pipelineHook?.markPipelineLoaded) {
+                pipelineHook.markPipelineLoaded(pipelinePath);
+            }
+            
             // Show success feedback
             setTimeout(() => {
                 setIsCommitting(false);
@@ -172,21 +213,21 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
                     
                     <button
                         onClick={onClickCommit}
-                        disabled={!isInitialized || !isPipelineLoaded || isCommitting}
+                        disabled={!isInitialized || isCommitting}
                         style={{
                             ...styles.toolbarButton,
                             ...styles.toolbarButtonCommit,
-                            opacity: (!isInitialized || !isPipelineLoaded || isCommitting) ? 0.6 : 1,
-                            cursor: (!isInitialized || !isPipelineLoaded || isCommitting) ? 'not-allowed' : 'pointer'
+                            opacity: (!isInitialized || isCommitting) ? 0.6 : 1,
+                            cursor: (!isInitialized || isCommitting) ? 'not-allowed' : 'pointer'
                         }}
                         onMouseEnter={(e) => {
-                            if (isInitialized && isPipelineLoaded && !isCommitting) {
+                            if (isInitialized && !isCommitting) {
                                 e.currentTarget.style.background = '#059669';
                                 e.currentTarget.style.transform = 'translateY(-1px)';
                             }
                         }}
                         onMouseLeave={(e) => {
-                            if (isInitialized && isPipelineLoaded && !isCommitting) {
+                            if (isInitialized && !isCommitting) {
                                 e.currentTarget.style.background = '#10b981';
                                 e.currentTarget.style.transform = 'translateY(0)';
                             }
@@ -194,13 +235,17 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
                         title={
                             !isInitialized 
                                 ? "Initialize a repository first" 
-                                : !isPipelineLoaded 
-                                    ? "Load pipeline.yaml into canvas first (click pipeline.yaml and select 'Edit in Canvas')"
-                                    : "Commit pipeline to repository"
+                                : currentPipelinePath
+                                    ? `Update ${currentPipelinePath} in repository`
+                                    : "Create pipeline.yaml in repository"
                         }
                     >
                         <GitCommit size={16} style={{ marginRight: '8px' }} />
-                        {isCommitting ? 'Committing...' : 'Commit Pipeline'}
+                        {isCommitting 
+                            ? 'Committing...' 
+                            : currentPipelinePath 
+                                ? 'Commit Pipeline' 
+                                : 'Create Pipeline'}
                     </button>
                     
                     <button

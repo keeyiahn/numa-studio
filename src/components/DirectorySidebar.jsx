@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Folder, File, ChevronLeft, ChevronRight, ChevronDown, Plus, FolderOpen, FileCode, Trash2 } from 'lucide-react';
 
-const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHook, scriptsHook }) => {
+const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHook, scriptsHook, pipelineHook }) => {
     const { repository, isInitialized, savedRepositories, initializeRepository, cloneRepository, openRepository, removeRepository, clearRepository, gitCtx } = repositoryHook;
     const { openModal } = modalHook || {};
     const { setAllScripts } = scriptsHook || {};
@@ -15,19 +15,49 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
 
     const handleInitialize = async () => {
         if (repoName.trim()) {
-            await initializeRepository(repoName.trim());
+            const newRepo = await initializeRepository(repoName.trim());
             setRepoName('');
             setShowInitModal(false);
+            
+            // Auto-load empty pipeline template for new repository
+            if (!newRepo.hasPipelineFile && pipelineHook) {
+                const { setNodes, setEdges, markPipelineLoaded } = pipelineHook;
+                if (setNodes && setEdges) {
+                    // Import empty template
+                    const { getEmptyPipelineTemplate, importYamlFromString } = await import('../utils/yamlTools');
+                    const emptyTemplate = getEmptyPipelineTemplate();
+                    importYamlFromString(emptyTemplate, setNodes, setEdges);
+                    // Mark as loaded but with null path (new pipeline, not from file)
+                    if (markPipelineLoaded) {
+                        markPipelineLoaded(null);
+                    }
+                }
+            }
         }
     };
 
     const handleClone = async () => {
         if (repoName.trim() && gitUrl.trim()) {
             try {
-                await cloneRepository(repoName.trim(), gitUrl.trim());
+                const clonedRepo = await cloneRepository(repoName.trim(), gitUrl.trim());
                 setRepoName('');
                 setGitUrl('');
                 setShowCloneModal(false);
+                
+                // Auto-load empty pipeline template if no pipeline file exists
+                if (!clonedRepo.hasPipelineFile && pipelineHook) {
+                    const { setNodes, setEdges, markPipelineLoaded } = pipelineHook;
+                    if (setNodes && setEdges) {
+                        // Import empty template
+                        const { getEmptyPipelineTemplate, importYamlFromString } = await import('../utils/yamlTools');
+                        const emptyTemplate = getEmptyPipelineTemplate();
+                        importYamlFromString(emptyTemplate, setNodes, setEdges);
+                        // Mark as loaded but with null path (new pipeline, not from file)
+                        if (markPipelineLoaded) {
+                            markPipelineLoaded(null);
+                        }
+                    }
+                }
             } catch (error) {
                 alert('Failed to clone repository: ' + error.message);
             }
@@ -57,6 +87,21 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                     }
                 });
                 setAllScripts(scriptsToLoad);
+            }
+            
+            // Auto-load empty pipeline template if no pipeline file exists
+            if (!loadedRepo.hasPipelineFile && pipelineHook) {
+                const { setNodes, setEdges, markPipelineLoaded } = pipelineHook;
+                if (setNodes && setEdges) {
+                    // Import empty template
+                    const { getEmptyPipelineTemplate, importYamlFromString } = await import('../utils/yamlTools');
+                    const emptyTemplate = getEmptyPipelineTemplate();
+                    importYamlFromString(emptyTemplate, setNodes, setEdges);
+                    // Mark as loaded but with null path (new pipeline, not from file)
+                    if (markPipelineLoaded) {
+                        markPipelineLoaded(null);
+                    }
+                }
             }
             
             setShowOpenModal(false);

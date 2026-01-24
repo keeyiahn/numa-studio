@@ -118,6 +118,17 @@ export const exportPipeline = (nodes, edges) => {
     loadPipelineFromYaml(yamlString, setNodes, setEdges);
   }
 
+  // Generate an empty pipeline template
+  export function getEmptyPipelineTemplate() {
+    const emptyPipeline = {
+      apiVersion: "numaflow.numaproj.io/v1alpha1",
+      kind: "Pipeline",
+      metadata: { name: "my-pipeline" },
+      spec: { vertices: [], edges: [] }
+    };
+    return yaml.dump(emptyPipeline, { sortKeys: false });
+  }
+
   // Validate if YAML string is a valid Numaflow pipeline
   export function isValidPipeline(yamlString) {
     try {
