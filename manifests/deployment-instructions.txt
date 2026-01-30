@@ -1,0 +1,10 @@
+docker build -t numagui:latest .
+docker build -f Dockerfile.proxy -t numagui-proxy:latest .
+
+kind load docker-image numagui:latest -n my-cluster
+kind load docker-image numagui-proxy:latest -n my-cluster
+
+kubectl apply -f manifests/webapp-deployment.yaml
+kubectl apply -f manifests/proxy-deployment.yaml
+kubectl apply -f manifests/proxy-service.yaml
+kubectl apply -f manifests/webapp-service.yaml

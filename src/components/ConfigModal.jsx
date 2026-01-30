@@ -3,6 +3,9 @@ import { parseYaml, loadYaml, isValidPipeline, importYamlFromString } from '../u
 import { useState, useEffect } from 'react';
 import yaml from 'js-yaml';
 import { Download, FileText, Edit3 } from 'lucide-react';
+import { modalStyles, buttonStyles, inputStyles } from '../styles/components';
+import { hoverHandlers } from '../styles/hoverUtils';
+import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
 export default function ConfigModal({ modalHook, pipelineHook, templatesHook, scriptsHook }) {
 
@@ -166,27 +169,63 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook, sc
     );
 
     return (
-        <div style={styles.overlay}>
-          <div style={styles.modal}>
+        <div style={modalStyles.overlay}>
+          <div style={{ ...modalStyles.container, ...modalStyles.containerMedium }}>
             {isViewFile && fileInfo && (
-                <div style={styles.exportHeader}>
-                    <div style={styles.exportIconContainer}>
-                        <FileText size={24} color="#3b82f6" />
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: spacing.lg,
+                    padding: spacing.lg,
+                    background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                    borderRadius: spacing.md,
+                    border: `1px solid ${colors.border.default}`,
+                    marginBottom: spacing.sm
+                }}>
+                    <div style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: spacing.md,
+                        background: colors.primaryLight,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                    }}>
+                        <FileText size={24} color={colors.primary} />
                     </div>
                     <div>
-                        <h3 style={styles.exportTitle}>{fileInfo.fileName}</h3>
-                        <p style={styles.exportDescription}>Repository file viewer</p>
+                        <h3 style={modalStyles.title}>{fileInfo.fileName}</h3>
+                        <p style={modalStyles.description}>Repository file viewer</p>
                     </div>
                 </div>
             )}
             {type === 'exported pipeline' && (
-                <div style={styles.exportHeader}>
-                    <div style={styles.exportIconContainer}>
-                        <Download size={24} color="#3b82f6" />
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: spacing.lg,
+                    padding: spacing.lg,
+                    background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                    borderRadius: spacing.md,
+                    border: `1px solid ${colors.border.default}`,
+                    marginBottom: spacing.sm
+                }}>
+                    <div style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: spacing.md,
+                        background: colors.primaryLight,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                    }}>
+                        <Download size={24} color={colors.primary} />
                     </div>
                     <div>
-                        <h3 style={styles.exportTitle}>Export Pipeline</h3>
-                        <p style={styles.exportDescription}>Enter a name for your pipeline YAML file</p>
+                        <h3 style={modalStyles.title}>Export Pipeline</h3>
+                        <p style={modalStyles.description}>Enter a name for your pipeline YAML file</p>
                     </div>
                 </div>
             )}
@@ -195,25 +234,35 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook, sc
                     value={newId}
                     onChange={(e) => setNewId(e.target.value)}
                     placeholder={type === 'exported pipeline' ? "pipeline-name" : "e.g., generatorSource"}
-                    style={styles.input}
-                    onFocus={(e) => {
-                        e.target.style.borderColor = '#3b82f6';
-                        e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                    }}
-                    onBlur={(e) => {
-                        e.target.style.borderColor = '#e2e8f0';
-                        e.target.style.boxShadow = 'none';
-                    }}
+                    style={inputStyles.input}
+                    {...hoverHandlers.inputFocus}
                 />
             )}
             
             {type === 'exported pipeline' && (
-                <div style={styles.previewContainer}>
-                    <div style={styles.previewHeader}>
-                        <FileText size={16} style={{ marginRight: '8px', color: '#64748b' }} />
-                        <span style={styles.previewLabel}>Preview</span>
+                <div style={{
+                    border: `1px solid ${colors.border.default}`,
+                    borderRadius: borderRadius.lg,
+                    overflow: 'hidden',
+                    background: colors.bg.primary
+                }}>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: `${spacing.md} ${spacing.md}`,
+                        background: colors.bg.hover,
+                        borderBottom: `1px solid ${colors.border.default}`
+                    }}>
+                        <FileText size={16} style={{ marginRight: spacing.sm, color: colors.text.tertiary }} />
+                        <span style={{
+                            fontSize: typography.fontSize.sm,
+                            fontWeight: typography.fontWeight.semibold,
+                            color: colors.text.tertiary,
+                            textTransform: 'uppercase',
+                            letterSpacing: typography.letterSpacing.wide
+                        }}>Preview</span>
                     </div>
-                    <div style={styles.previewContent}>
+                    <div style={{ border: 'none' }}>
                         <Editor
                           height="450px"
                           language="yaml"
@@ -232,7 +281,7 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook, sc
             
             {type === 'new template' && (
                 <>
-                    <label style={styles.label}>Vertex Type</label>
+                    <label style={inputStyles.label}>Vertex Type</label>
                     <select
                         value={vertexType}
                         onChange={(e) => {
@@ -241,15 +290,8 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook, sc
                                 setSelectedUdfScript('');
                             }
                         }}
-                        style={styles.select}
-                        onFocus={(e) => {
-                            e.target.style.borderColor = '#3b82f6';
-                            e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                        }}
-                        onBlur={(e) => {
-                            e.target.style.borderColor = '#e2e8f0';
-                            e.target.style.boxShadow = 'none';
-                        }}
+                        style={inputStyles.select}
+                        {...hoverHandlers.inputFocus}
                     >
                         <option value="source">Source</option>
                         <option value="udf">UDF</option>
@@ -258,19 +300,12 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook, sc
 
                     {vertexType === 'udf' && (
                         <>
-                            <label style={styles.label}>UDF Script</label>
+                            <label style={inputStyles.label}>UDF Script</label>
                             <select
                                 value={selectedUdfScript}
                                 onChange={(e) => setSelectedUdfScript(e.target.value)}
-                                style={styles.select}
-                                onFocus={(e) => {
-                                    e.target.style.borderColor = '#3b82f6';
-                                    e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                                }}
-                                onBlur={(e) => {
-                                    e.target.style.borderColor = '#e2e8f0';
-                                    e.target.style.boxShadow = 'none';
-                                }}
+                                style={inputStyles.select}
+                                {...hoverHandlers.inputFocus}
                             >
                                 <option value="">Select a script...</option>
                                 {udfScripts.map(scriptKey => (
@@ -286,8 +321,8 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook, sc
     
             {type !== 'exported pipeline' && (
                 <div style={{ 
-                    border: '1px solid #e2e8f0', 
-                    borderRadius: '8px', 
+                    border: `1px solid ${colors.border.default}`, 
+                    borderRadius: borderRadius.lg, 
                     overflow: 'hidden',
                     boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.05)'
                 }}>
@@ -306,61 +341,45 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook, sc
                     />
                 </div>
             )}
-            <div style={styles.buttonContainer}>
+            <div style={modalStyles.buttonContainer}>
               <button 
-                style={styles.buttonSecondary} 
+                style={buttonStyles.secondary} 
                 onClick={closeModal}
-                onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#e2e8f0';
-                }}
-                onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#f1f5f9';
-                }}
+                {...hoverHandlers.secondaryButton}
               >
                 {isViewFile ? 'Close' : 'Cancel'}
               </button>
               {isViewFile && isValidPipelineFile && (
                 <button 
-                  style={styles.buttonEditCanvas} 
+                  style={buttonStyles.success} 
                   onClick={handleEditInCanvas}
-                  onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#059669';
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 4px 6px rgba(5, 150, 105, 0.3)';
-                  }}
-                  onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#10b981';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
-                  }}
+                  {...hoverHandlers.successButton}
                 >
-                  <Edit3 size={16} style={{ marginRight: '8px' }} />
+                  <Edit3 size={16} style={{ marginRight: spacing.sm }} />
                   Edit in Canvas
                 </button>
               )}
               {isViewFile && !isValidPipelineFile && fileInfo?.fileName?.endsWith('.yaml') && (
-                <div style={styles.validationMessage}>
+                <div style={{
+                    padding: `${spacing.sm} ${spacing.md}`,
+                    background: colors.dangerLight,
+                    color: colors.danger,
+                    borderRadius: borderRadius.md,
+                    fontSize: typography.fontSize.base,
+                    border: `1px solid ${colors.dangerBorder}`
+                }}>
                   {pipelineValidationError || 'Not a valid pipeline file'}
                 </div>
               )}
               {!isViewFile && (
                 <button 
-                  style={styles.button} 
+                  style={buttonStyles.primary} 
                   onClick={saveConfig}
-                  onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#2563eb';
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 4px 6px rgba(59, 130, 246, 0.3)';
-                  }}
-                  onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#3b82f6';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
-                  }}
+                  {...hoverHandlers.primaryButton}
                 >
                   {type === 'exported pipeline' ? (
                       <>
-                          <Download size={16} style={{ marginRight: '8px' }} />
+                          <Download size={16} style={{ marginRight: spacing.sm }} />
                           Download YAML
                       </>
                   ) : (
@@ -374,171 +393,4 @@ export default function ConfigModal({ modalHook, pipelineHook, templatesHook, sc
       );
 }
 
-const styles = {
-    overlay: {
-      position: 'fixed', 
-      top: 0, 
-      left: 0,
-      width: '100vw', 
-      height: '100vh',
-      background: 'rgba(15, 23, 42, 0.6)',
-      backdropFilter: 'blur(4px)',
-      display: 'flex', 
-      justifyContent: 'center', 
-      alignItems: 'center',
-      zIndex: 1000
-    },
-    modal: {
-      background: '#ffffff',
-      padding: '28px',
-      width: '520px',
-      maxWidth: '90vw',
-      maxHeight: '90vh',
-      borderRadius: '16px',
-      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '20px',
-      border: '1px solid #e2e8f0'
-    },
-    input: {
-        padding: '12px 16px',
-        fontSize: '14px',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        background: '#ffffff',
-        color: '#0f172a',
-        transition: 'all 0.2s ease',
-        width: '100%'
-    },
-    label: {
-        fontSize: '13px',
-        fontWeight: '600',
-        color: '#475569',
-        marginBottom: '8px',
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em'
-    },
-    select: {
-        padding: '12px 16px',
-        fontSize: '14px',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        background: '#ffffff',
-        cursor: 'pointer',
-        color: '#0f172a',
-        transition: 'all 0.2s ease',
-        width: '100%'
-    },
-    buttonContainer: {
-        display: 'flex',
-        gap: '12px',
-        justifyContent: 'flex-end',
-        marginTop: '8px',
-        paddingTop: '16px',
-        borderTop: '1px solid #f1f5f9'
-    },
-    button: {
-        padding: '10px 20px',
-        background: '#3b82f6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '14px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
-    },
-    buttonSecondary: {
-        padding: '10px 20px',
-        background: '#f1f5f9',
-        color: '#475569',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '14px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease',
-        display: 'flex',
-        alignItems: 'center'
-    },
-    exportHeader: {
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '16px',
-        padding: '16px',
-        background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
-        borderRadius: '12px',
-        border: '1px solid #e2e8f0',
-        marginBottom: '8px'
-    },
-    exportIconContainer: {
-        width: '48px',
-        height: '48px',
-        borderRadius: '12px',
-        background: '#dbeafe',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0
-    },
-    exportTitle: {
-        margin: 0,
-        fontSize: '18px',
-        fontWeight: '700',
-        color: '#0f172a',
-        letterSpacing: '-0.01em'
-    },
-    exportDescription: {
-        margin: '4px 0 0 0',
-        fontSize: '13px',
-        color: '#64748b'
-    },
-    previewContainer: {
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        overflow: 'hidden',
-        background: '#ffffff'
-    },
-    previewHeader: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '10px 14px',
-        background: '#f8fafc',
-        borderBottom: '1px solid #e2e8f0'
-    },
-    previewLabel: {
-        fontSize: '12px',
-        fontWeight: '600',
-        color: '#64748b',
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em'
-    },
-    previewContent: {
-        border: 'none'
-    },
-    buttonEditCanvas: {
-        padding: '10px 20px',
-        background: '#10b981',
-        color: 'white',
-        border: 'none',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '14px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-        display: 'flex',
-        alignItems: 'center'
-    },
-    validationMessage: {
-        padding: '8px 12px',
-        background: '#fef2f2',
-        color: '#dc2626',
-        borderRadius: '6px',
-        fontSize: '13px',
-        border: '1px solid #fecaca'
-    }
-  };
 

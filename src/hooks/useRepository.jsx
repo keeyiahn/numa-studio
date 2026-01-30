@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { initGitRepository, cloneGitRepository, updateGitRepository, gitRepositoryExists, listRepositories, loadRepository, deleteRepository, hasPipelineFile } from '../utils/gitTools';
+import { initGitRepository, cloneGitRepository, updateGitRepository, gitRepositoryExists, listRepositories, loadRepository, deleteRepository, hasPipelineFile, createGitHubRepo, addRemote, pushToGitHub, pullFromGitHub, storeGitHubToken, getGitHubToken, hasRemote, getRemoteUrl, extractTokenFromRemote } from '../utils/gitTools';
 
 export default function useRepository() {
     const [repository, setRepository] = useState(null);
@@ -52,11 +52,16 @@ export default function useRepository() {
         return { ...newRepo, hasPipelineFile: false };
     };
 
-    const cloneRepository = async (name, gitUrl) => {
+    const cloneRepository = async (name, gitUrl, keepConnected = true, token = null) => {
         // Clone repository from GitHub
         try {
-            const ctx = await cloneGitRepository(name, gitUrl);
+            const ctx = await cloneGitRepository(name, gitUrl, keepConnected, token);
             setGitCtx(ctx);
+
+            // If the user provided a token and we kept the remote, store it for future push/pull
+            if (keepConnected && typeof token === 'string' && token.trim()) {
+                storeGitHubToken(name, token.trim());
+            }
             
             // Load the cloned repository
             const loadedRepo = await loadRepository(name);
@@ -68,7 +73,7 @@ export default function useRepository() {
             
             await refreshRepositoryList();
             
-            return { ...loadedRepo, hasPipelineFile: hasPipeline };
+            return { ...loadedRepo, hasPipelineFile: hasPipeline, gitCtx: ctx };
         } catch (error) {
             console.error('Failed to clone repository:', error);
             throw error;
@@ -137,7 +142,7 @@ export default function useRepository() {
         setGitCtx(null);
     };
 
-    const updatePipeline = async (pipeline, isNewPipeline = false, pipelinePath = 'pipeline.yaml') => {
+    const updatePipeline = async (pipeline, isNewPipeline = false, pipelinePath = 'pipeline.yaml', commitMessage = null) => {
         if (!repository) return;
         const updatedRepo = {
             ...repository,
@@ -148,10 +153,11 @@ export default function useRepository() {
         
         // Update git repository
         try {
-            const commitMessage = isNewPipeline 
+            // Use provided commit message, or generate default
+            const message = commitMessage || (isNewPipeline 
                 ? `Create ${pipelinePath}` 
-                : `Update ${pipelinePath}`;
-            const ctx = await updateGitRepository(gitCtx, updatedRepo, commitMessage, pipelinePath);
+                : `Update ${pipelinePath}`);
+            const ctx = await updateGitRepository(gitCtx, updatedRepo, message, pipelinePath);
             setGitCtx(ctx);
         } catch (error) {
             console.error('Failed to commit pipeline changes:', error);
@@ -252,6 +258,133 @@ export default function useRepository() {
         }));
     };
 
+    const exportToGitHub = async (username, token, repoName, description = '', isPrivate = false) => {
+        if (!repository || !gitCtx) {
+            throw new Error('No repository initialized');
+        }
+
+        try {
+            // Store token for future use
+            storeGitHubToken(repository.name, token);
+
+            // Check if remote already exists
+            const remoteExists = await hasRemote(gitCtx, 'origin');
+            
+            let repoUrl;
+            if (remoteExists) {
+                // Get existing remote URL
+                repoUrl = await getRemoteUrl(gitCtx, 'origin');
+                if (!repoUrl) {
+                    throw new Error('Remote exists but URL not found');
+                }
+            } else {
+                // Create new GitHub repository
+                const repoData = await createGitHubRepo(username, token, repoName, description, isPrivate);
+                repoUrl = repoData.cloneUrl;
+                
+                // Add remote
+                await addRemote(gitCtx, 'origin', repoUrl);
+            }
+
+            // Ensure all changes are committed
+            await updateGitRepository(gitCtx, repository, 'Update repository before push');
+
+            // Push to GitHub
+            await pushToGitHub(gitCtx, token, 'origin', 'main');
+
+            return {
+                url: repoUrl.replace('.git', ''),
+                success: true
+            };
+        } catch (error) {
+            console.error('Failed to export to GitHub:', error);
+            throw error;
+        }
+    };
+
+    const pushToGitHubRemote = async () => {
+        if (!repository || !gitCtx) {
+            throw new Error('No repository initialized');
+        }
+
+        try {
+            // Check if remote exists
+            const remoteExists = await hasRemote(gitCtx, 'origin');
+            if (!remoteExists) {
+                throw new Error('Repository not connected to GitHub. Please export first.');
+            }
+
+            // Try to get stored token
+            let token = getGitHubToken(repository.name);
+            
+            // If not found, try to extract from remote URL
+            if (!token) {
+                token = await extractTokenFromRemote(gitCtx, 'origin');
+                if (token) {
+                    // Store it for future use
+                    storeGitHubToken(repository.name, token);
+                }
+            }
+            
+            if (!token) {
+                throw new Error('GitHub token not found. Please export again with your token.');
+            }
+
+            // Ensure all changes are committed
+            await updateGitRepository(gitCtx, repository, 'Update repository');
+
+            // Push to GitHub
+            await pushToGitHub(gitCtx, token, 'origin', 'main');
+
+            return { success: true };
+        } catch (error) {
+            console.error('Failed to push to GitHub:', error);
+            throw error;
+        }
+    };
+
+    const pullFromGitHubRemote = async () => {
+        if (!repository || !gitCtx) {
+            throw new Error('No repository initialized');
+        }
+
+        try {
+            // Check if remote exists
+            const remoteExists = await hasRemote(gitCtx, 'origin');
+            if (!remoteExists) {
+                throw new Error('Repository not connected to GitHub. Cannot pull without a remote.');
+            }
+
+            // Try to get stored token
+            let token = getGitHubToken(repository.name);
+            
+            // If not found, try to extract from remote URL
+            if (!token) {
+                token = await extractTokenFromRemote(gitCtx, 'origin');
+                if (token) {
+                    // Store it for future use
+                    storeGitHubToken(repository.name, token);
+                }
+            }
+            
+            if (!token) {
+                throw new Error('GitHub token not found. Please export again with your token.');
+            }
+
+            // Pull from GitHub
+            await pullFromGitHub(gitCtx, token, 'origin', 'main');
+
+            // Reload repository to reflect pulled changes
+            const loadedRepo = await loadRepository(repository.name);
+            setRepository(loadedRepo);
+
+            return { success: true };
+        } catch (error) {
+            console.error('Failed to pull from GitHub:', error);
+            throw error;
+        }
+    };
+
     return {
         repository,
         gitCtx,
@@ -267,7 +400,10 @@ export default function useRepository() {
         addScript,
         removeScript,
         addDockerfile,
-        addManifest
+        addManifest,
+        exportToGitHub,
+        pushToGitHubRemote,
+        pullFromGitHubRemote
     };
 }
 

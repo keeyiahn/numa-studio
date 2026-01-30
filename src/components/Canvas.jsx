@@ -13,6 +13,9 @@ import {
     useEffect
 } from "react";
 import { Download, Upload, FileText, GitCommit } from 'lucide-react';
+import { toolbarStyles, buttonStyles } from '../styles/components';
+import { hoverHandlers } from '../styles/hoverUtils';
+import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
 import { nameGen } from '../utils/nameGen';
 import { exportPipeline, importYaml } from '../utils/yamlTools';
@@ -166,13 +169,27 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
             pipelinePath = sanitized;
         }
         
+        // Prompt for commit message
+        const defaultMessage = currentPipelinePath 
+            ? `Update ${currentPipelinePath}`
+            : `Create ${pipelinePath}`;
+        const commitMessage = prompt('Enter commit message:', defaultMessage);
+        
+        // If user cancelled, abort commit
+        if (commitMessage === null) {
+            return;
+        }
+        
+        // Use default message if user provided empty string
+        const finalCommitMessage = commitMessage.trim() || defaultMessage;
+        
         setIsCommitting(true);
         try {
             const pipelineYaml = exportPipeline(nodes, edges);
             // If currentPipelinePath is null, we're creating a new pipeline
             // Otherwise, we're updating an existing one
             const isNewPipeline = !currentPipelinePath;
-            await updatePipeline(pipelineYaml, isNewPipeline, pipelinePath);
+            await updatePipeline(pipelineYaml, isNewPipeline, pipelinePath, finalCommitMessage);
             
             // If this was a new pipeline, mark it as loaded with the provided path
             if (isNewPipeline && pipelineHook?.markPipelineLoaded) {
@@ -192,22 +209,15 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
     return (
         <div style={{ width: '100%', height: '100%', position: 'relative' }}>
             {/* Toolbar */}
-            <div style={styles.toolbar}>
-                <div style={styles.toolbarGroup}>
+            <div style={toolbarStyles.container}>
+                <div style={toolbarStyles.group}>
                     <button
                         onClick={onClickExport}
-                        style={styles.toolbarButton}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#2563eb';
-                            e.currentTarget.style.transform = 'translateY(-1px)';
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.background = '#3b82f6';
-                            e.currentTarget.style.transform = 'translateY(0)';
-                        }}
+                        style={buttonStyles.primary}
+                        {...hoverHandlers.primaryButton}
                         title="Export pipeline as YAML"
                     >
-                        <Download size={16} style={{ marginRight: '8px' }} />
+                        <Download size={16} style={{ marginRight: spacing.sm }} />
                         Export Pipeline
                     </button>
                     
@@ -215,21 +225,18 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
                         onClick={onClickCommit}
                         disabled={!isInitialized || isCommitting}
                         style={{
-                            ...styles.toolbarButton,
-                            ...styles.toolbarButtonCommit,
+                            ...buttonStyles.success,
                             opacity: (!isInitialized || isCommitting) ? 0.6 : 1,
                             cursor: (!isInitialized || isCommitting) ? 'not-allowed' : 'pointer'
                         }}
                         onMouseEnter={(e) => {
                             if (isInitialized && !isCommitting) {
-                                e.currentTarget.style.background = '#059669';
-                                e.currentTarget.style.transform = 'translateY(-1px)';
+                                hoverHandlers.successButton.onMouseEnter(e);
                             }
                         }}
                         onMouseLeave={(e) => {
                             if (isInitialized && !isCommitting) {
-                                e.currentTarget.style.background = '#10b981';
-                                e.currentTarget.style.transform = 'translateY(0)';
+                                hoverHandlers.successButton.onMouseLeave(e);
                             }
                         }}
                         title={
@@ -240,7 +247,7 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
                                     : "Create pipeline.yaml in repository"
                         }
                     >
-                        <GitCommit size={16} style={{ marginRight: '8px' }} />
+                        <GitCommit size={16} style={{ marginRight: spacing.sm }} />
                         {isCommitting 
                             ? 'Committing...' 
                             : currentPipelinePath 
@@ -252,26 +259,25 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
                         onClick={handleImportClick}
                         disabled={isImporting}
                         style={{
-                            ...styles.toolbarButton,
-                            ...styles.toolbarButtonSecondary,
+                            ...buttonStyles.secondary,
                             opacity: isImporting ? 0.6 : 1,
                             cursor: isImporting ? 'not-allowed' : 'pointer'
                         }}
                         onMouseEnter={(e) => {
                             if (!isImporting) {
-                                e.currentTarget.style.background = '#e2e8f0';
+                                hoverHandlers.secondaryButton.onMouseEnter(e);
                                 e.currentTarget.style.transform = 'translateY(-1px)';
                             }
                         }}
                         onMouseLeave={(e) => {
                             if (!isImporting) {
-                                e.currentTarget.style.background = '#f1f5f9';
+                                hoverHandlers.secondaryButton.onMouseLeave(e);
                                 e.currentTarget.style.transform = 'translateY(0)';
                             }
                         }}
                         title="Import pipeline from YAML file"
                     >
-                        <Upload size={16} style={{ marginRight: '8px' }} />
+                        <Upload size={16} style={{ marginRight: spacing.sm }} />
                         {isImporting ? 'Importing...' : 'Import Pipeline'}
                     </button>
                 </div>
@@ -281,7 +287,7 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
                     type="file"
                     accept=".yaml,.yml"
                     onChange={onClickImport}
-                    style={styles.hiddenFileInput}
+                    style={{ display: 'none' }}
                 />
             </div>
             
@@ -290,36 +296,36 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
                 <div style={{
                     position: 'absolute',
                     top: '60px',
-                    left: '20px',
-                    right: '20px',
-                    padding: '8px 12px',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    color: '#64748b',
+                    left: spacing.xl,
+                    right: spacing.xl,
+                    padding: `${spacing.sm} ${spacing.md}`,
+                    background: colors.bg.hover,
+                    border: `1px solid ${colors.border.default}`,
+                    borderRadius: borderRadius.md,
+                    fontSize: typography.fontSize.base,
+                    color: colors.text.tertiary,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
+                    gap: spacing.sm,
                     zIndex: 10,
                     boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
                 }}>
-                    <FileText size={14} color="#64748b" />
-                    <span style={{ fontWeight: 500, color: '#475569' }}>Editing:</span>
+                    <FileText size={14} color={colors.text.tertiary} />
+                    <span style={{ fontWeight: typography.fontWeight.medium, color: colors.text.secondary }}>Editing:</span>
                     {currentPipelinePath ? (
                         <span style={{ 
                             fontFamily: 'monospace',
-                            color: '#0f172a',
-                            background: '#f1f5f9',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            fontSize: '12px'
+                            color: colors.text.primary,
+                            background: colors.bg.tertiary,
+                            padding: `2px ${spacing.md}`,
+                            borderRadius: borderRadius.xs,
+                            fontSize: typography.fontSize.sm
                         }}>
                             {currentPipelinePath}
                         </span>
                     ) : (
                         <span style={{ 
-                            color: '#94a3b8',
+                            color: colors.text.muted,
                             fontStyle: 'italic'
                         }}>
                             Imported pipeline (not from repository)
@@ -349,52 +355,3 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
         </div>
     );
 }
-
-const styles = {
-    toolbar: {
-        position: 'absolute',
-        top: '16px',
-        left: '16px',
-        zIndex: 10,
-        display: 'flex',
-        gap: '12px',
-        alignItems: 'center',
-        background: '#ffffff',
-        padding: '8px 12px',
-        borderRadius: '12px',
-        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-        border: '1px solid #e2e8f0'
-    },
-    toolbarGroup: {
-        display: 'flex',
-        gap: '8px',
-        alignItems: 'center'
-    },
-    toolbarButton: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '10px 16px',
-        background: '#3b82f6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '13px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-        fontFamily: 'inherit'
-    },
-    toolbarButtonSecondary: {
-        background: '#f1f5f9',
-        color: '#475569',
-        border: '1px solid #e2e8f0'
-    },
-    toolbarButtonCommit: {
-        background: '#10b981',
-        color: 'white'
-    },
-    hiddenFileInput: {
-        display: 'none'
-    }
-};

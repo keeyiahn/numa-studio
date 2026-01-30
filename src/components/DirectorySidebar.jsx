@@ -1,17 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { Folder, File, ChevronLeft, ChevronRight, ChevronDown, Plus, FolderOpen, FileCode, Trash2 } from 'lucide-react';
+import { Folder, File, ChevronLeft, ChevronRight, ChevronDown, Plus, FolderOpen, FileCode, Trash2, Upload, Download, Github } from 'lucide-react';
+import { sidebarStyles, buttonStyles, modalStyles, inputStyles, fileTreeStyles, emptyStateStyles } from '../styles/components';
+import { hoverHandlers } from '../styles/hoverUtils';
+import { colors, spacing, borderRadius, shadows, typography } from '../styles/theme';
 
 const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHook, scriptsHook, pipelineHook }) => {
-    const { repository, isInitialized, savedRepositories, initializeRepository, cloneRepository, openRepository, removeRepository, clearRepository, gitCtx } = repositoryHook;
+    const { repository, isInitialized, savedRepositories, initializeRepository, cloneRepository, openRepository, removeRepository, clearRepository, gitCtx, exportToGitHub, pushToGitHubRemote, pullFromGitHubRemote } = repositoryHook;
     const { openModal } = modalHook || {};
     const { setAllScripts } = scriptsHook || {};
     const [showInitModal, setShowInitModal] = useState(false);
     const [showOpenModal, setShowOpenModal] = useState(false);
     const [showCloneModal, setShowCloneModal] = useState(false);
+    const [showExportModal, setShowExportModal] = useState(false);
     const [repoName, setRepoName] = useState('');
     const [gitUrl, setGitUrl] = useState('');
+    const [keepConnected, setKeepConnected] = useState(true);
+    const [cloneToken, setCloneToken] = useState('');
     const [fileTree, setFileTree] = useState(null);
     const [expandedFolders, setExpandedFolders] = useState(new Set());
+    const [githubUsername, setGithubUsername] = useState('');
+    const [githubToken, setGithubToken] = useState('');
+    const [githubRepoName, setGithubRepoName] = useState('');
+    const [githubDescription, setGithubDescription] = useState('');
+    const [githubIsPrivate, setGithubIsPrivate] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    const [hasGitHubRemote, setHasGitHubRemote] = useState(false);
+    const [remoteRepoInfo, setRemoteRepoInfo] = useState(null); // { username, repo, fullUrl }
+    const [showPushTokenModal, setShowPushTokenModal] = useState(false);
+    const [pushToken, setPushToken] = useState('');
 
     const handleInitialize = async () => {
         if (repoName.trim()) {
@@ -39,10 +55,28 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
     const handleClone = async () => {
         if (repoName.trim() && gitUrl.trim()) {
             try {
-                const clonedRepo = await cloneRepository(repoName.trim(), gitUrl.trim());
+                const clonedRepo = await cloneRepository(
+                    repoName.trim(),
+                    gitUrl.trim(),
+                    keepConnected,
+                    keepConnected ? cloneToken.trim() : null
+                );
                 setRepoName('');
                 setGitUrl('');
+                setKeepConnected(true); // Reset to default
+                setCloneToken('');
                 setShowCloneModal(false);
+                
+                // Check remote status after cloning (to update UI)
+                // Pass gitCtx directly from the clone result to avoid race condition
+                if (clonedRepo.gitCtx) {
+                    await checkRemote(clonedRepo.gitCtx);
+                } else {
+                    // Fallback: check after state update
+                    setTimeout(async () => {
+                        await checkRemote();
+                    }, 100);
+                }
                 
                 // Auto-load empty pipeline template if no pipeline file exists
                 if (!clonedRepo.hasPipelineFile && pipelineHook) {
@@ -119,6 +153,136 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
             } catch (error) {
                 alert('Failed to delete repository: ' + error.message);
             }
+        }
+    };
+
+    const checkRemote = async (ctx = null) => {
+        const contextToUse = ctx || gitCtx;
+        if (!contextToUse) {
+            setHasGitHubRemote(false);
+            setRemoteRepoInfo(null);
+            return;
+        }
+        try {
+            const { hasRemote, getRemoteUrl } = await import('../utils/gitTools');
+            const exists = await hasRemote(contextToUse, 'origin');
+            setHasGitHubRemote(exists);
+            
+            if (exists) {
+                // Get remote URL and parse it
+                const remoteUrl = await getRemoteUrl(contextToUse, 'origin');
+                if (remoteUrl) {
+                    // Parse GitHub URL: https://github.com/username/repo.git or https://github.com/username/repo
+                    const match = remoteUrl.match(/github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
+                    if (match) {
+                        const [, username, repo] = match;
+                        // Build full GitHub URL (without .git)
+                        const fullUrl = `https://github.com/${username}/${repo}`;
+                        setRemoteRepoInfo({ username, repo, fullUrl });
+                    } else {
+                        setRemoteRepoInfo(null);
+                    }
+                } else {
+                    setRemoteRepoInfo(null);
+                }
+            } else {
+                setRemoteRepoInfo(null);
+            }
+        } catch (error) {
+            setHasGitHubRemote(false);
+            setRemoteRepoInfo(null);
+        }
+    };
+
+    useEffect(() => {
+        checkRemote();
+    }, [gitCtx]);
+
+    const handleExportToGitHub = async () => {
+        if (!githubUsername.trim() || !githubToken.trim() || !githubRepoName.trim()) {
+            alert('Please fill in all required fields');
+            return;
+        }
+
+        setIsExporting(true);
+        try {
+            const result = await exportToGitHub(
+                githubUsername.trim(),
+                githubToken.trim(),
+                githubRepoName.trim(),
+                githubDescription.trim(),
+                githubIsPrivate
+            );
+            
+            setShowExportModal(false);
+            setGithubUsername('');
+            setGithubToken('');
+            setGithubRepoName('');
+            setGithubDescription('');
+            setGithubIsPrivate(false);
+            
+            alert(`Successfully exported to GitHub!\nRepository: ${result.url}`);
+            await checkRemote();
+        } catch (error) {
+            alert('Failed to export to GitHub: ' + error.message);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handlePushToGitHub = async () => {
+        try {
+            await pushToGitHubRemote();
+            alert('Successfully pushed to GitHub!');
+        } catch (error) {
+            // If token not found, prompt for it
+            if (error.message && error.message.includes('token not found')) {
+                setShowPushTokenModal(true);
+            } else {
+                alert('Failed to push to GitHub: ' + error.message);
+            }
+        }
+    };
+
+    const handlePullFromGitHub = async () => {
+        try {
+            await pullFromGitHubRemote();
+            alert('Successfully pulled from GitHub!');
+            // Reload the file tree to show updated files
+            if (repository) {
+                // Trigger a refresh by checking remote again
+                await checkRemote();
+            }
+        } catch (error) {
+            // If token not found, prompt for it
+            if (error.message && error.message.includes('token not found')) {
+                setShowPushTokenModal(true);
+            } else {
+                alert('Failed to pull from GitHub: ' + error.message);
+            }
+        }
+    };
+
+    const handlePushWithToken = async () => {
+        if (!pushToken.trim()) {
+            alert('Please enter your GitHub token');
+            return;
+        }
+
+        try {
+            // Store the token first
+            if (repository) {
+                const { storeGitHubToken } = await import('../utils/gitTools');
+                storeGitHubToken(repository.name, pushToken.trim());
+            }
+
+            // Now try to push
+            await pushToGitHubRemote();
+            setShowPushTokenModal(false);
+            setPushToken('');
+            alert('Successfully pushed to GitHub!');
+        } catch (error) {
+            alert('Failed to push to GitHub: ' + error.message);
         }
     };
 
@@ -270,7 +434,7 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                 <div key={itemKey} style={{ marginBottom: '2px' }}>
                     <div 
                         style={{
-                            ...styles.fileItem,
+                            ...fileTreeStyles.item,
                             cursor: 'pointer',
                             paddingLeft: `${depth * 16 + 4}px`
                         }}
@@ -281,18 +445,7 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                                 handleFileClick(currentPath, file.name);
                             }
                         }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#f8fafc';
-                            if (!isFolder) {
-                                e.currentTarget.style.color = '#3b82f6';
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'transparent';
-                            if (!isFolder) {
-                                e.currentTarget.style.color = '#475569';
-                            }
-                        }}
+                        {...hoverHandlers.fileItem}
                     >
                         {isFolder && hasChildren && (
                             <span style={{ marginRight: '4px', display: 'inline-flex', alignItems: 'center' }}>
@@ -304,11 +457,11 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                             </span>
                         )}
                         {!isFolder && <span style={{ width: '16px', display: 'inline-block' }} />}
-                        <Icon size={14} style={{ marginRight: '6px', color: isFolder ? '#3b82f6' : '#64748b' }} />
-                        <span style={styles.fileName}>{file.name}</span>
+                        <Icon size={14} style={{ marginRight: spacing.md, color: isFolder ? colors.primary : colors.text.tertiary }} />
+                        <span style={fileTreeStyles.fileName}>{file.name}</span>
                     </div>
                     {isFolder && hasChildren && isExpanded && (
-                        <div style={styles.children}>
+                        <div style={fileTreeStyles.children}>
                             {file.children.map((child, childIndex) => 
                                 renderFileItem(child, depth + 1, `${itemKey}-${childIndex}`)
                             )}
@@ -319,16 +472,21 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
         };
 
         return (
-            <div style={styles.fileTree}>
-                <div style={styles.repoHeader}>
-                    <Folder size={16} style={{ marginRight: '8px', color: '#3b82f6' }} />
-                    <span style={styles.repoName}>{repository.name}</span>
+            <div style={fileTreeStyles.container}>
+                <div style={fileTreeStyles.header}>
+                    <Folder size={16} style={{ marginRight: spacing.sm, color: colors.primary }} />
+                    <span style={{ fontSize: typography.fontSize.md }}>{repository.name}</span>
                 </div>
                 {files.length > 0 ? (
                     files.map((file, index) => renderFileItem(file, 0, `file-${index}`, ''))
                 ) : (
-                    <div style={styles.emptyRepo}>
-                        <p style={styles.emptyRepoText}>No files yet. Create a pipeline and scripts to see them here.</p>
+                    <div style={{
+                        padding: spacing.xl,
+                        textAlign: 'center',
+                        color: colors.text.tertiary,
+                        fontSize: typography.fontSize.base
+                    }}>
+                        <p style={{ margin: 0, lineHeight: '1.5' }}>No files yet. Create a pipeline and scripts to see them here.</p>
                     </div>
                 )}
             </div>
@@ -339,16 +497,9 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
         return (
             <button
                 onClick={onToggle}
-                style={styles.toggleButton}
+                style={{ ...buttonStyles.toggle, left: spacing.sm }}
                 title="Show directory sidebar"
-                onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#e2e8f0';
-                    e.currentTarget.style.transform = 'scale(1.05)';
-                }}
-                onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#f1f5f9';
-                    e.currentTarget.style.transform = 'scale(1)';
-                }}
+                {...hoverHandlers.toggleButton}
             >
                 <ChevronRight size={20} />
             </button>
@@ -357,55 +508,34 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
 
     return (
         <>
-            <aside style={styles.sidebar}>
-                <div style={styles.headerRow}>
-                    <span style={styles.header}>Repository</span>
-                    <div style={styles.headerButtons}>
+            <aside style={{ ...sidebarStyles.container, ...sidebarStyles.containerLeft }}>
+                <div style={sidebarStyles.headerRow}>
+                    <span style={sidebarStyles.header}>Repository</span>
+                    <div style={sidebarStyles.headerButtons}>
                         {!isInitialized ? (
                             <button
                                 onClick={() => setShowInitModal(true)}
-                                style={styles.initButton}
+                                style={buttonStyles.icon}
                                 title="Initialize repository"
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = '#e2e8f0';
-                                    e.currentTarget.style.color = '#3b82f6';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = '#f1f5f9';
-                                    e.currentTarget.style.color = '#475569';
-                                }}
+                                {...hoverHandlers.iconButton}
                             >
                                 <Plus size={16} />
                             </button>
                         ) : (
                             <button
                                 onClick={clearRepository}
-                                style={styles.clearButton}
+                                style={{ ...buttonStyles.icon, fontSize: '20px', fontWeight: typography.fontWeight.light }}
                                 title="Clear repository"
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = '#fee2e2';
-                                    e.currentTarget.style.color = '#dc2626';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = '#f1f5f9';
-                                    e.currentTarget.style.color = '#475569';
-                                }}
+                                {...hoverHandlers.deleteButton}
                             >
                                 ×
                             </button>
                         )}
                         <button
                             onClick={onToggle}
-                            style={styles.toggleIconBtn}
+                            style={buttonStyles.icon}
                             title="Hide directory sidebar"
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.background = '#e2e8f0';
-                                e.currentTarget.style.color = '#3b82f6';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.background = '#f1f5f9';
-                                e.currentTarget.style.color = '#475569';
-                            }}
+                            {...hoverHandlers.iconButton}
                         >
                             <ChevronLeft size={16} />
                         </button>
@@ -413,75 +543,138 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                 </div>
 
                 {!isInitialized ? (
-                    <div style={styles.emptyState}>
-                        <Folder size={48} style={{ color: '#cbd5e1', marginBottom: '12px' }} />
-                        <p style={styles.emptyText}>No repository initialized</p>
-                        <div style={styles.buttonGroup}>
+                    <div style={emptyStateStyles.container}>
+                        <Folder size={48} style={{ color: colors.border.dark, marginBottom: spacing.md }} />
+                        <p style={emptyStateStyles.text}>No repository initialized</p>
+                        <div style={emptyStateStyles.buttonGroup}>
                             <button
                                 onClick={() => setShowOpenModal(true)}
-                                style={styles.openRepoButton}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = '#e2e8f0';
-                                    e.currentTarget.style.borderColor = '#cbd5e1';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = '#f1f5f9';
-                                    e.currentTarget.style.borderColor = '#e2e8f0';
-                                }}
+                                style={{ ...buttonStyles.secondary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                {...hoverHandlers.openRepoButton}
                             >
-                                <FolderOpen size={16} style={{ marginRight: '8px' }} />
+                                <FolderOpen size={16} style={{ marginRight: spacing.sm }} />
                                 Open Repository
                             </button>
                             <button
                                 onClick={() => setShowInitModal(true)}
-                                style={styles.initRepoButton}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = '#2563eb';
-                                    e.currentTarget.style.transform = 'translateY(-1px)';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = '#3b82f6';
-                                    e.currentTarget.style.transform = 'translateY(0)';
-                                }}
+                                style={{ ...buttonStyles.primary, display: 'flex', alignItems: 'center' }}
+                                {...hoverHandlers.primaryButton}
                             >
-                                <Plus size={16} style={{ marginRight: '8px' }} />
+                                <Plus size={16} style={{ marginRight: spacing.sm }} />
                                 New Repository
                             </button>
                             <button
                                 onClick={() => setShowCloneModal(true)}
-                                style={styles.cloneRepoButton}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = '#2563eb';
-                                    e.currentTarget.style.transform = 'translateY(-1px)';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = '#3b82f6';
-                                    e.currentTarget.style.transform = 'translateY(0)';
-                                }}
+                                style={{ ...buttonStyles.primary, display: 'flex', alignItems: 'center', marginTop: spacing.md }}
+                                {...hoverHandlers.primaryButton}
                             >
-                                <FolderOpen size={16} style={{ marginRight: '8px' }} />
+                                <FolderOpen size={16} style={{ marginRight: spacing.sm }} />
                                 Clone Repo
                             </button>
                         </div>
                     </div>
                 ) : (
-                    <div style={styles.content}>
-                        {renderFileTree()}
-                    </div>
+                    <>
+                        <div style={{ padding: spacing.md, borderBottom: `1px solid ${colors.border.default}` }}>
+                            {hasGitHubRemote ? (
+                                <>
+                                    <div style={{ display: 'flex', gap: spacing.sm }}>
+                                        <button
+                                            onClick={handlePullFromGitHub}
+                                            style={{
+                                                ...buttonStyles.secondary,
+                                                flex: 1,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
+                                            {...hoverHandlers.secondaryButton}
+                                        >
+                                            <Download size={16} style={{ marginRight: spacing.sm }} />
+                                            Pull
+                                        </button>
+                                        <button
+                                            onClick={handlePushToGitHub}
+                                            style={{
+                                                ...buttonStyles.primary,
+                                                flex: 1,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
+                                            {...hoverHandlers.primaryButton}
+                                        >
+                                            <Upload size={16} style={{ marginRight: spacing.sm }} />
+                                            Push
+                                        </button>
+                                    </div>
+                                    {remoteRepoInfo && (
+                                        <a
+                                            href={remoteRepoInfo.fullUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{
+                                                display: 'block',
+                                                marginTop: spacing.sm,
+                                                fontSize: typography.fontSize.sm,
+                                                color: colors.text.tertiary,
+                                                textDecoration: 'none',
+                                                textAlign: 'center',
+                                                cursor: 'pointer',
+                                                transition: 'color 0.2s ease'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.target.style.color = colors.primary;
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.target.style.color = colors.text.tertiary;
+                                            }}
+                                        >
+                                            → {remoteRepoInfo.username}/{remoteRepoInfo.repo}
+                                        </a>
+                                    )}
+                                </>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        if (repository) {
+                                            setGithubRepoName(repository.name);
+                                        }
+                                        setShowExportModal(true);
+                                    }}
+                                    style={{
+                                        ...buttonStyles.primary,
+                                        width: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                    }}
+                                    {...hoverHandlers.primaryButton}
+                                >
+                                    <Github size={16} style={{ marginRight: spacing.sm }} />
+                                    Export repo to GitHub
+                                </button>
+                            )}
+                        </div>
+                        <div style={{ flex: 1, overflowY: 'auto', paddingRight: spacing.xs }}>
+                            {renderFileTree()}
+                        </div>
+                    </>
                 )}
             </aside>
 
             {showInitModal && (
-                <div style={styles.modalOverlay} onClick={() => setShowInitModal(false)}>
-                    <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-                        <h3 style={styles.modalTitle}>Initialize Repository</h3>
-                        <p style={styles.modalDescription}>Enter a name for your repository</p>
+                <div style={modalStyles.overlay} onClick={() => setShowInitModal(false)}>
+                    <div style={{ ...modalStyles.container, ...modalStyles.containerSmall }} onClick={(e) => e.stopPropagation()}>
+                        <h3 style={modalStyles.title}>Initialize Repository</h3>
+                        <p style={modalStyles.description}>Enter a name for your repository</p>
                         <input
                             type="text"
                             value={repoName}
                             onChange={(e) => setRepoName(e.target.value)}
                             placeholder="my-pipeline-repo"
-                            style={styles.modalInput}
+                            style={inputStyles.input}
+                            {...hoverHandlers.inputFocus}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                     handleInitialize();
@@ -489,13 +682,13 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                             }}
                             autoFocus
                         />
-                        <div style={styles.modalButtons}>
+                        <div style={modalStyles.buttonContainer}>
                             <button
                                 onClick={() => {
                                     setShowInitModal(false);
                                     setRepoName('');
                                 }}
-                                style={styles.modalButtonSecondary}
+                                style={buttonStyles.secondary}
                             >
                                 Cancel
                             </button>
@@ -503,7 +696,7 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                                 onClick={handleInitialize}
                                 disabled={!repoName.trim()}
                                 style={{
-                                    ...styles.modalButton,
+                                    ...buttonStyles.primary,
                                     opacity: repoName.trim() ? 1 : 0.5,
                                     cursor: repoName.trim() ? 'pointer' : 'not-allowed'
                                 }}
@@ -516,46 +709,73 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
             )}
 
             {showOpenModal && (
-                <div style={styles.modalOverlay} onClick={() => setShowOpenModal(false)}>
-                    <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-                        <h3 style={styles.modalTitle}>Open Repository</h3>
-                        <p style={styles.modalDescription}>Select a repository to open</p>
-                        <div style={styles.repoList}>
+                <div style={modalStyles.overlay} onClick={() => setShowOpenModal(false)}>
+                    <div style={{ ...modalStyles.container, ...modalStyles.containerSmall }} onClick={(e) => e.stopPropagation()}>
+                        <h3 style={modalStyles.title}>Open Repository</h3>
+                        <p style={modalStyles.description}>Select a repository to open</p>
+                        <div style={{
+                            maxHeight: '400px',
+                            overflowY: 'auto',
+                            marginBottom: spacing.xl,
+                            border: `1px solid ${colors.border.default}`,
+                            borderRadius: borderRadius.lg,
+                            padding: spacing.sm
+                        }}>
                             {savedRepositories.length === 0 ? (
-                                <p style={styles.noReposText}>No saved repositories found</p>
+                                <p style={{
+                                    textAlign: 'center',
+                                    color: colors.text.tertiary,
+                                    fontSize: typography.fontSize.md,
+                                    padding: spacing.xl
+                                }}>No saved repositories found</p>
                             ) : (
                                 savedRepositories.map((repo) => (
                                     <div
                                         key={repo.name}
-                                        style={styles.repoListItem}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            padding: spacing.md,
+                                            borderRadius: borderRadius.md,
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s ease',
+                                            marginBottom: spacing.xs
+                                        }}
                                         onClick={() => handleOpenRepository(repo.name)}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.background = '#f8fafc';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.background = 'transparent';
-                                        }}
+                                        {...hoverHandlers.repoListItem}
                                     >
-                                        <Folder size={18} style={{ color: '#3b82f6', marginRight: '10px' }} />
+                                        <Folder size={18} style={{ color: colors.primary, marginRight: spacing.md }} />
                                         <div style={{ flex: 1 }}>
-                                            <div style={styles.repoListItemName}>{repo.name}</div>
-                                            <div style={styles.repoListItemMeta}>
+                                            <div style={{
+                                                fontSize: typography.fontSize.md,
+                                                fontWeight: typography.fontWeight.semibold,
+                                                color: colors.text.primary,
+                                                marginBottom: spacing.xs
+                                            }}>{repo.name}</div>
+                                            <div style={{
+                                                fontSize: typography.fontSize.sm,
+                                                color: colors.text.tertiary
+                                            }}>
                                                 Created: {new Date(repo.createdAt).toLocaleDateString()}
                                                 {repo.lastModified && ` • Modified: ${new Date(repo.lastModified).toLocaleDateString()}`}
                                             </div>
                                         </div>
                                         <button
                                             onClick={(e) => handleDeleteRepository(e, repo.name)}
-                                            style={styles.deleteRepoButton}
+                                            style={{
+                                                padding: spacing.md,
+                                                background: 'transparent',
+                                                border: 'none',
+                                                borderRadius: borderRadius.xs,
+                                                cursor: 'pointer',
+                                                color: colors.text.tertiary,
+                                                transition: 'all 0.2s ease',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
                                             title="Delete repository"
-                                            onMouseEnter={(e) => {
-                                                e.currentTarget.style.background = '#fee2e2';
-                                                e.currentTarget.style.color = '#dc2626';
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                e.currentTarget.style.background = 'transparent';
-                                                e.currentTarget.style.color = '#64748b';
-                                            }}
+                                            {...hoverHandlers.deleteButton}
                                         >
                                             <Trash2 size={14} />
                                         </button>
@@ -563,10 +783,10 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                                 ))
                             )}
                         </div>
-                        <div style={styles.modalButtons}>
+                        <div style={modalStyles.buttonContainer}>
                             <button
                                 onClick={() => setShowOpenModal(false)}
-                                style={styles.modalButtonSecondary}
+                                style={buttonStyles.secondary}
                             >
                                 Cancel
                             </button>
@@ -576,16 +796,17 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
             )}
 
             {showCloneModal && (
-                <div style={styles.modalOverlay} onClick={() => setShowCloneModal(false)}>
-                    <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-                        <h3 style={styles.modalTitle}>Clone Repository</h3>
-                        <p style={styles.modalDescription}>Enter repository name and GitHub URL</p>
+                <div style={modalStyles.overlay} onClick={() => setShowCloneModal(false)}>
+                    <div style={{ ...modalStyles.container, ...modalStyles.containerSmall }} onClick={(e) => e.stopPropagation()}>
+                        <h3 style={modalStyles.title}>Clone Repository</h3>
+                        <p style={modalStyles.description}>Enter repository name and GitHub URL</p>
                         <input
                             type="text"
                             value={repoName}
                             onChange={(e) => setRepoName(e.target.value)}
                             placeholder="my-cloned-repo"
-                            style={styles.modalInput}
+                            style={inputStyles.input}
+                            {...hoverHandlers.inputFocus}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                     handleClone();
@@ -597,7 +818,8 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                             value={gitUrl}
                             onChange={(e) => setGitUrl(e.target.value)}
                             placeholder="https://github.com/username/repo.git"
-                            style={styles.modalInput}
+                            style={inputStyles.input}
+                            {...hoverHandlers.inputFocus}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                     handleClone();
@@ -605,14 +827,51 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                             }}
                             autoFocus
                         />
-                        <div style={styles.modalButtons}>
+                        <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            marginTop: spacing.md,
+                            cursor: 'pointer'
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={keepConnected}
+                                onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setKeepConnected(checked);
+                                    if (!checked) setCloneToken('');
+                                }}
+                                style={{ marginRight: spacing.sm }}
+                            />
+                            <span style={{ fontSize: typography.fontSize.sm, color: colors.text.secondary }}>
+                                Keep connected to original repository
+                            </span>
+                        </label>
+                        {keepConnected && (
+                            <input
+                                type="password"
+                                value={cloneToken}
+                                onChange={(e) => setCloneToken(e.target.value)}
+                                placeholder="Personal Access Token (optional; needed for private repos)"
+                                style={{ ...inputStyles.input, marginTop: spacing.md }}
+                                {...hoverHandlers.inputFocus}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        handleClone();
+                                    }
+                                }}
+                            />
+                        )}
+                        <div style={modalStyles.buttonContainer}>
                             <button
                                 onClick={() => {
                                     setShowCloneModal(false);
                                     setRepoName('');
                                     setGitUrl('');
+                                    setKeepConnected(true); // Reset to default
+                                    setCloneToken('');
                                 }}
-                                style={styles.modalButtonSecondary}
+                                style={buttonStyles.secondary}
                             >
                                 Cancel
                             </button>
@@ -620,7 +879,7 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                                 onClick={handleClone}
                                 disabled={!repoName.trim() || !gitUrl.trim()}
                                 style={{
-                                    ...styles.modalButton,
+                                    ...buttonStyles.primary,
                                     opacity: (repoName.trim() && gitUrl.trim()) ? 1 : 0.5,
                                     cursor: (repoName.trim() && gitUrl.trim()) ? 'pointer' : 'not-allowed'
                                 }}
@@ -631,356 +890,147 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                     </div>
                 </div>
             )}
+
+            {showExportModal && (
+                <div style={modalStyles.overlay} onClick={() => !isExporting && setShowExportModal(false)}>
+                    <div style={{ ...modalStyles.container, maxWidth: '500px' }} onClick={(e) => e.stopPropagation()}>
+                        <h3 style={modalStyles.title}>Export to GitHub</h3>
+                        <p style={modalStyles.description}>Enter your GitHub credentials and repository details</p>
+                        <input
+                            type="text"
+                            value={githubUsername}
+                            onChange={(e) => setGithubUsername(e.target.value)}
+                            placeholder="GitHub username"
+                            style={inputStyles.input}
+                            disabled={isExporting}
+                            {...hoverHandlers.inputFocus}
+                        />
+                        <input
+                            type="password"
+                            value={githubToken}
+                            onChange={(e) => setGithubToken(e.target.value)}
+                            placeholder="Personal Access Token (with repo scope)"
+                            style={{ ...inputStyles.input, marginTop: spacing.md }}
+                            disabled={isExporting}
+                            {...hoverHandlers.inputFocus}
+                        />
+                        <input
+                            type="text"
+                            value={githubRepoName}
+                            onChange={(e) => setGithubRepoName(e.target.value)}
+                            placeholder="Repository name"
+                            style={{ ...inputStyles.input, marginTop: spacing.md }}
+                            disabled={isExporting}
+                            {...hoverHandlers.inputFocus}
+                        />
+                        <input
+                            type="text"
+                            value={githubDescription}
+                            onChange={(e) => setGithubDescription(e.target.value)}
+                            placeholder="Description (optional)"
+                            style={{ ...inputStyles.input, marginTop: spacing.md }}
+                            disabled={isExporting}
+                            {...hoverHandlers.inputFocus}
+                        />
+                        <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            marginTop: spacing.md,
+                            cursor: isExporting ? 'not-allowed' : 'pointer',
+                            opacity: isExporting ? 0.5 : 1
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={githubIsPrivate}
+                                onChange={(e) => setGithubIsPrivate(e.target.checked)}
+                                disabled={isExporting}
+                                style={{ marginRight: spacing.sm }}
+                            />
+                            <span style={{ fontSize: typography.fontSize.sm, color: colors.text.secondary }}>
+                                Private repository
+                            </span>
+                        </label>
+                        <div style={{ ...modalStyles.buttonContainer, marginTop: spacing.lg }}>
+                            <button
+                                onClick={() => {
+                                    if (!isExporting) {
+                                        setShowExportModal(false);
+                                        setGithubUsername('');
+                                        setGithubToken('');
+                                        setGithubRepoName('');
+                                        setGithubDescription('');
+                                        setGithubIsPrivate(false);
+                                    }
+                                }}
+                                style={buttonStyles.secondary}
+                                disabled={isExporting}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleExportToGitHub}
+                                disabled={!githubUsername.trim() || !githubToken.trim() || !githubRepoName.trim() || isExporting}
+                                style={{
+                                    ...buttonStyles.primary,
+                                    opacity: (githubUsername.trim() && githubToken.trim() && githubRepoName.trim() && !isExporting) ? 1 : 0.5,
+                                    cursor: (githubUsername.trim() && githubToken.trim() && githubRepoName.trim() && !isExporting) ? 'pointer' : 'not-allowed'
+                                }}
+                            >
+                                {isExporting ? 'Exporting...' : 'Export'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showPushTokenModal && (
+                <div style={modalStyles.overlay} onClick={() => setShowPushTokenModal(false)}>
+                    <div style={{ ...modalStyles.container, ...modalStyles.containerSmall }} onClick={(e) => e.stopPropagation()}>
+                        <h3 style={modalStyles.title}>GitHub Token Required</h3>
+                        <p style={modalStyles.description}>Enter your GitHub Personal Access Token to push changes</p>
+                        <input
+                            type="password"
+                            value={pushToken}
+                            onChange={(e) => setPushToken(e.target.value)}
+                            placeholder="Personal Access Token"
+                            style={inputStyles.input}
+                            {...hoverHandlers.inputFocus}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handlePushWithToken();
+                                }
+                            }}
+                            autoFocus
+                        />
+                        <div style={modalStyles.buttonContainer}>
+                            <button
+                                onClick={() => {
+                                    setShowPushTokenModal(false);
+                                    setPushToken('');
+                                }}
+                                style={buttonStyles.secondary}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handlePushWithToken}
+                                disabled={!pushToken.trim()}
+                                style={{
+                                    ...buttonStyles.primary,
+                                    opacity: pushToken.trim() ? 1 : 0.5,
+                                    cursor: pushToken.trim() ? 'pointer' : 'not-allowed'
+                                }}
+                            >
+                                Push
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 };
 
-const styles = {
-    sidebar: {
-        height: '100vh',
-        width: '240px',
-        background: '#ffffff',
-        borderRight: '1px solid #e2e8f0',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '20px 16px',
-        gap: '16px',
-        fontSize: '14px',
-        boxShadow: '2px 0 8px rgba(0, 0, 0, 0.02)',
-        transition: 'transform 0.3s ease, width 0.3s ease',
-        transform: 'translateX(0)',
-        overflow: 'hidden'
-    },
-    headerRow: {
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 4px',
-        marginBottom: '8px'
-    },
-    header: {
-        fontWeight: '700',
-        fontSize: '16px',
-        color: '#0f172a',
-        letterSpacing: '-0.01em'
-    },
-    headerButtons: {
-        display: 'flex',
-        gap: '6px',
-        alignItems: 'center'
-    },
-    initButton: {
-        width: '28px',
-        height: '28px',
-        borderRadius: '6px',
-        border: 'none',
-        background: '#f1f5f9',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#475569',
-        transition: 'all 0.2s ease',
-        padding: 0
-    },
-    clearButton: {
-        width: '28px',
-        height: '28px',
-        borderRadius: '6px',
-        border: 'none',
-        background: '#f1f5f9',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#475569',
-        transition: 'all 0.2s ease',
-        padding: 0,
-        fontSize: '20px',
-        fontWeight: '300'
-    },
-    toggleIconBtn: {
-        width: '28px',
-        height: '28px',
-        borderRadius: '6px',
-        border: 'none',
-        background: '#f1f5f9',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#475569',
-        transition: 'all 0.2s ease',
-        padding: 0
-    },
-    toggleButton: {
-        position: 'fixed',
-        left: '8px',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        width: '40px',
-        height: '40px',
-        borderRadius: '8px',
-        border: 'none',
-        background: '#f1f5f9',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#475569',
-        transition: 'all 0.2s ease',
-        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-        zIndex: 100,
-        padding: 0
-    },
-    emptyState: {
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '40px 20px',
-        textAlign: 'center',
-        flex: 1
-    },
-    emptyText: {
-        fontSize: '13px',
-        color: '#64748b',
-        marginBottom: '20px'
-    },
-    buttonGroup: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '10px',
-        width: '100%',
-        maxWidth: '200px'
-    },
-    openRepoButton: {
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '10px 16px',
-        background: '#f1f5f9',
-        color: '#475569',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '13px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
-    },
-    initRepoButton: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '10px 16px',
-        background: '#3b82f6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '13px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
-    },
-    cloneRepoButton: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '10px 16px',
-        background: '#3b82f6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '13px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-        marginTop: '10px'
-    },
-    content: {
-        flex: 1,
-        overflowY: 'auto',
-        paddingRight: '4px'
-    },
-    fileTree: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '4px'
-    },
-    repoHeader: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '8px 12px',
-        background: '#f8fafc',
-        borderRadius: '6px',
-        marginBottom: '8px',
-        fontWeight: '600',
-        color: '#0f172a'
-    },
-    repoName: {
-        fontSize: '14px'
-    },
-    fileItem: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '6px 12px',
-        borderRadius: '4px',
-        fontSize: '13px',
-        color: '#475569',
-        cursor: 'pointer',
-        transition: 'all 0.2s ease',
-        userSelect: 'none'
-    },
-    fileName: {
-        fontSize: '13px'
-    },
-    children: {
-        marginLeft: '20px',
-        marginTop: '4px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '2px'
-    },
-    childItem: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '4px 8px',
-        borderRadius: '4px',
-        fontSize: '12px',
-        color: '#64748b'
-    },
-    childFileName: {
-        fontSize: '12px'
-    },
-    emptyRepo: {
-        padding: '20px',
-        textAlign: 'center',
-        color: '#64748b',
-        fontSize: '13px'
-    },
-    emptyRepoText: {
-        margin: 0,
-        lineHeight: '1.5'
-    },
-    modalOverlay: {
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        background: 'rgba(15, 23, 42, 0.6)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 2000
-    },
-    modal: {
-        background: '#ffffff',
-        padding: '28px',
-        width: '400px',
-        maxWidth: '90vw',
-        borderRadius: '16px',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-        border: '1px solid #e2e8f0'
-    },
-    modalTitle: {
-        margin: 0,
-        fontSize: '20px',
-        fontWeight: '700',
-        color: '#0f172a',
-        marginBottom: '8px'
-    },
-    modalDescription: {
-        margin: '0 0 20px 0',
-        fontSize: '14px',
-        color: '#64748b'
-    },
-    modalInput: {
-        width: '100%',
-        padding: '12px 16px',
-        fontSize: '14px',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        background: '#ffffff',
-        color: '#0f172a',
-        marginBottom: '20px',
-        boxSizing: 'border-box'
-    },
-    modalButtons: {
-        display: 'flex',
-        gap: '12px',
-        justifyContent: 'flex-end'
-    },
-    modalButton: {
-        padding: '10px 20px',
-        background: '#3b82f6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '14px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease'
-    },
-    modalButtonSecondary: {
-        padding: '10px 20px',
-        background: '#f1f5f9',
-        color: '#475569',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '14px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease'
-    },
-    repoList: {
-        maxHeight: '400px',
-        overflowY: 'auto',
-        marginBottom: '20px',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        padding: '8px'
-    },
-    repoListItem: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '12px',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        transition: 'all 0.2s ease',
-        marginBottom: '4px'
-    },
-    repoListItemName: {
-        fontSize: '14px',
-        fontWeight: '600',
-        color: '#0f172a',
-        marginBottom: '4px'
-    },
-    repoListItemMeta: {
-        fontSize: '12px',
-        color: '#64748b'
-    },
-    deleteRepoButton: {
-        padding: '6px',
-        background: 'transparent',
-        border: 'none',
-        borderRadius: '4px',
-        cursor: 'pointer',
-        color: '#64748b',
-        transition: 'all 0.2s ease',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-    },
-    noReposText: {
-        textAlign: 'center',
-        color: '#64748b',
-        fontSize: '14px',
-        padding: '20px'
-    }
-};
 
 export default DirectorySidebar;
 

@@ -3,6 +3,9 @@ import { parseYaml, loadYaml } from '../utils/yamlTools';
 import { useState, useEffect } from 'react';
 import yaml from 'js-yaml';
 import { Download } from 'lucide-react';
+import { modalStyles, buttonStyles, inputStyles } from '../styles/components';
+import { hoverHandlers } from '../styles/hoverUtils';
+import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
 const MAP_TEMPLATE = `
 from pynumaflow.mapper import Messages, Message, Datum, MapServer
@@ -163,26 +166,19 @@ CMD ["python", "-u","${scriptName}.py"]
     if (!isOpen) return null;    
     
     return (
-        <div style={styles.overlay}>
-          <div style={styles.modal}>
+        <div style={modalStyles.overlay}>
+          <div style={{ ...modalStyles.container, ...modalStyles.containerLarge }}>
             <input
                 value={newId}
                 onChange={(e) => setNewId(e.target.value)}
                 placeholder="Script name"
-                style={styles.input}
-                onFocus={(e) => {
-                    e.target.style.borderColor = '#3b82f6';
-                    e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                }}
-                onBlur={(e) => {
-                    e.target.style.borderColor = '#e2e8f0';
-                    e.target.style.boxShadow = 'none';
-                }}
+                style={inputStyles.input}
+                {...hoverHandlers.inputFocus}
             />
             
             {type === 'new script' ? (
                 <>
-                    <label style={styles.label}>Script Type</label>
+                    <label style={inputStyles.label}>Script Type</label>
                     <select
                         value={scriptType}
                         onChange={(e) => {
@@ -193,15 +189,8 @@ CMD ["python", "-u","${scriptName}.py"]
                                 setText(REDUCE_TEMPLATE);
                             }
                         }}
-                        style={styles.select}
-                        onFocus={(e) => {
-                            e.target.style.borderColor = '#3b82f6';
-                            e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                        }}
-                        onBlur={(e) => {
-                            e.target.style.borderColor = '#e2e8f0';
-                            e.target.style.boxShadow = 'none';
-                        }}
+                        style={inputStyles.select}
+                        {...hoverHandlers.inputFocus}
                     >
                         <option value="map">Map</option>
                         <option value="reduce">Reduce</option>
@@ -209,30 +198,49 @@ CMD ["python", "-u","${scriptName}.py"]
                 </>
             ) : (
                 <>
-                    <div style={styles.scriptInfo}>
-                        <div style={styles.scriptInfoHeader}>
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: spacing.md,
+                        padding: spacing.xl,
+                        background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                        borderRadius: spacing.md,
+                        border: `1px solid ${colors.border.default}`,
+                        boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.05)'
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                            gap: spacing.lg
+                        }}>
                             <div>
-                                <div style={styles.scriptName}>{id}</div>
-                                <div style={styles.scriptTypeLabel}>
-                                    Type: <span style={styles.scriptType}>{currentScriptType}</span>
+                                <div style={{
+                                    fontSize: typography.fontSize['2xl'],
+                                    fontWeight: typography.fontWeight.bold,
+                                    color: colors.text.primary,
+                                    letterSpacing: typography.letterSpacing.tight
+                                }}>{id}</div>
+                                <div style={{
+                                    fontSize: typography.fontSize.base,
+                                    color: colors.text.tertiary,
+                                    fontWeight: typography.fontWeight.medium
+                                }}>
+                                    Type: <span style={{
+                                        fontWeight: typography.fontWeight.semibold,
+                                        color: colors.primary,
+                                        textTransform: 'capitalize',
+                                        fontSize: typography.fontSize.md
+                                    }}>{currentScriptType}</span>
                                 </div>
                             </div>
                             <button
                                 onClick={downloadScriptAndDockerfile}
-                                style={styles.downloadButton}
+                                style={buttonStyles.primary}
                                 title="Download .py file and Dockerfile"
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = '#2563eb';
-                                    e.currentTarget.style.transform = 'translateY(-1px)';
-                                    e.currentTarget.style.boxShadow = '0 4px 6px rgba(59, 130, 246, 0.3)';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = '#3b82f6';
-                                    e.currentTarget.style.transform = 'translateY(0)';
-                                    e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
-                                }}
+                                {...hoverHandlers.primaryButton}
                             >
-                                <Download size={16} style={{ marginRight: '8px' }} />
+                                <Download size={16} style={{ marginRight: spacing.sm }} />
                                 Download .py & Dockerfile
                             </button>
                         </div>
@@ -241,8 +249,8 @@ CMD ["python", "-u","${scriptName}.py"]
             )}
             
             <div style={{ 
-                border: '1px solid #e2e8f0', 
-                borderRadius: '8px', 
+                border: `1px solid ${colors.border.default}`, 
+                borderRadius: borderRadius.lg, 
                 overflow: 'hidden',
                 boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.05)'
             }}>
@@ -260,32 +268,18 @@ CMD ["python", "-u","${scriptName}.py"]
                   onChange={(change) => setText(change)}
                 />
             </div>
-            <div style={styles.buttonContainer}>
+            <div style={modalStyles.buttonContainer}>
               <button 
-                style={styles.buttonSecondary} 
+                style={buttonStyles.secondary} 
                 onClick={closeModal}
-                onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#e2e8f0';
-                }}
-                onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#f1f5f9';
-                }}
+                {...hoverHandlers.secondaryButton}
               >
                 Cancel
               </button>
               <button 
-                style={styles.button} 
+                style={buttonStyles.primary} 
                 onClick={saveConfig}
-                onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#2563eb';
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 4px 6px rgba(59, 130, 246, 0.3)';
-                }}
-                onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#3b82f6';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
-                }}
+                {...hoverHandlers.primaryButton}
               >
                 Save
               </button>
@@ -295,141 +289,4 @@ CMD ["python", "-u","${scriptName}.py"]
       );
 }
 
-const styles = {
-    overlay: {
-      position: 'fixed', 
-      top: 0, 
-      left: 0,
-      width: '100vw', 
-      height: '100vh',
-      background: 'rgba(15, 23, 42, 0.6)',
-      backdropFilter: 'blur(4px)',
-      display: 'flex', 
-      justifyContent: 'center', 
-      alignItems: 'center',
-      zIndex: 1000
-    },
-    modal: {
-      background: '#ffffff',
-      padding: '28px',
-      width: '700px',
-      maxWidth: '90vw',
-      maxHeight: '90vh',
-      borderRadius: '16px',
-      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '20px',
-      border: '1px solid #e2e8f0'
-    },
-    input: {
-        padding: '12px 16px',
-        fontSize: '14px',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        background: '#ffffff',
-        color: '#0f172a',
-        transition: 'all 0.2s ease',
-        width: '100%'
-    },
-    label: {
-        fontSize: '13px',
-        fontWeight: '600',
-        color: '#475569',
-        marginBottom: '8px',
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em'
-    },
-    select: {
-        padding: '12px 16px',
-        fontSize: '14px',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        background: '#ffffff',
-        cursor: 'pointer',
-        color: '#0f172a',
-        transition: 'all 0.2s ease',
-        width: '100%'
-    },
-    scriptInfo: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-        padding: '20px',
-        background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
-        borderRadius: '12px',
-        border: '1px solid #e2e8f0',
-        boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.05)'
-    },
-    scriptInfoHeader: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        gap: '16px'
-    },
-    downloadButton: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '10px 16px',
-        background: '#3b82f6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '13px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-        whiteSpace: 'nowrap',
-        flexShrink: 0
-    },
-    scriptName: {
-        fontSize: '20px',
-        fontWeight: '700',
-        color: '#0f172a',
-        letterSpacing: '-0.01em'
-    },
-    scriptTypeLabel: {
-        fontSize: '13px',
-        color: '#64748b',
-        fontWeight: '500'
-    },
-    scriptType: {
-        fontWeight: '600',
-        color: '#3b82f6',
-        textTransform: 'capitalize',
-        fontSize: '14px'
-    },
-    buttonContainer: {
-        display: 'flex',
-        gap: '12px',
-        justifyContent: 'flex-end',
-        marginTop: '8px',
-        paddingTop: '16px',
-        borderTop: '1px solid #f1f5f9'
-    },
-    button: {
-        padding: '10px 20px',
-        background: '#3b82f6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '14px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
-    },
-    buttonSecondary: {
-        padding: '10px 20px',
-        background: '#f1f5f9',
-        color: '#475569',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '14px',
-        fontWeight: '600',
-        transition: 'all 0.2s ease'
-    }
-  };
 

@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: numagui-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: numagui-proxy
+  template:
+    metadata:
+      labels:
+        app: numagui-proxy
+    spec:
+      containers:
+        - name: proxy
+          image: numagui-proxy:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
