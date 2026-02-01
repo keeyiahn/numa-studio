@@ -14,7 +14,7 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
     const [showExportModal, setShowExportModal] = useState(false);
     const [repoName, setRepoName] = useState('');
     const [gitUrl, setGitUrl] = useState('');
-    const [keepConnected, setKeepConnected] = useState(true);
+    const [keepConnected, setKeepConnected] = useState(false);
     const [cloneToken, setCloneToken] = useState('');
     const [fileTree, setFileTree] = useState(null);
     const [expandedFolders, setExpandedFolders] = useState(new Set());
