@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { initGitRepository, cloneGitRepository, updateGitRepository, gitRepositoryExists, listRepositories, loadRepository, deleteRepository, hasPipelineFile, createGitHubRepo, addRemote, pushToGitHub, pullFromGitHub, storeGitHubToken, getGitHubToken, hasRemote, getRemoteUrl, extractTokenFromRemote } from '../utils/gitTools';
+import { initGitRepository, cloneGitRepository, updateGitRepository, gitRepositoryExists, listRepositories, loadRepository, deleteRepository, hasPipelineFile, getFileTree, createGitHubRepo, addRemote, pushToGitHub, pullFromGitHub, storeGitHubToken, getGitHubToken, hasRemote, getRemoteUrl, extractTokenFromRemote } from '../utils/gitTools';
 
 export default function useRepository() {
     const [repository, setRepository] = useState(null);
@@ -53,16 +53,15 @@ export default function useRepository() {
     };
 
     const cloneRepository = async (name, gitUrl, keepConnected = true, token = null) => {
-        // Clone repository from GitHub
+        const doClone = async (t) => {
+            const ctx = await cloneGitRepository(name, gitUrl, keepConnected, t);
+            if (keepConnected && typeof t === 'string' && t?.trim()) storeGitHubToken(name, t.trim());
+            return ctx;
+        };
         try {
-            const ctx = await cloneGitRepository(name, gitUrl, keepConnected, token);
+            let ctx = await doClone(token);
             setGitCtx(ctx);
 
-            // If the user provided a token and we kept the remote, store it for future push/pull
-            if (keepConnected && typeof token === 'string' && token.trim()) {
-                storeGitHubToken(name, token.trim());
-            }
-            
             // Load the cloned repository
             const loadedRepo = await loadRepository(name);
             setRepository(loadedRepo);
@@ -75,6 +74,10 @@ export default function useRepository() {
             
             return { ...loadedRepo, hasPipelineFile: hasPipeline, gitCtx: ctx };
         } catch (error) {
+            if (error?.message?.includes('401')) {
+                const t = window.prompt('Private repo. Enter GitHub token:');
+                if (t?.trim()) return cloneRepository(name, gitUrl, keepConnected, t.trim());
+            }
             console.error('Failed to clone repository:', error);
             throw error;
         }
@@ -386,6 +389,12 @@ export default function useRepository() {
         }
     };
 
+    const loadFileTree = async () => {
+        if (!gitCtx) return [];
+        const { fs, path: pathMod, dir } = gitCtx;
+        return getFileTree(fs, pathMod, dir);
+    };
+
     return {
         repository,
         gitCtx,
@@ -397,6 +406,7 @@ export default function useRepository() {
         removeRepository,
         clearRepository,
         updatePipeline,
+        loadFileTree,
         syncAllScripts,
         addScript,
         removeScript,

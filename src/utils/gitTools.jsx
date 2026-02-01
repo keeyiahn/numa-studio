@@ -121,6 +121,41 @@ CMD ["python", "-u", "${sanitizedName}.py"]`;
     }
 }
 
+/**
+ * Build a tree of files and folders for the repository (relative paths).
+ * Used for directory picker in Save Pipeline As.
+ * @returns {Promise<Array<{ name: string, type: 'folder'|'file', path: string, children?: Array }>>}
+ */
+export async function getFileTree(fs, pathMod, repoDir) {
+    async function readDir(dirPath, parentPath = '') {
+        const items = [];
+        let entries = [];
+        try {
+            entries = await pReaddir(fs, pathMod.join(repoDir, dirPath));
+        } catch (e) {
+            return items;
+        }
+        for (const entry of entries) {
+            if (entry.startsWith('.')) continue;
+            const fullPath = pathMod.join(repoDir, dirPath, entry);
+            const relativePath = parentPath ? `${parentPath}/${entry}` : entry;
+            try {
+                const stat = await pStat(fs, fullPath);
+                if (stat.isDirectory()) {
+                    const children = await readDir(pathMod.join(dirPath, entry), relativePath);
+                    items.push({ name: entry, type: 'folder', path: relativePath, children });
+                } else {
+                    items.push({ name: entry, type: 'file', path: relativePath });
+                }
+            } catch (e) {
+                // skip
+            }
+        }
+        return items;
+    }
+    return readDir('');
+}
+
 async function getAllFiles(fs, pathMod, baseDir) {
     const results = [];
 
@@ -286,7 +321,6 @@ export async function cloneGitRepository(repoName, gitUrl, keepConnected = true,
             dir: repoDir,
             url: proxiedUrl,
             singleBranch: true,
-            depth: 1,
             ...authOptions
         });
 

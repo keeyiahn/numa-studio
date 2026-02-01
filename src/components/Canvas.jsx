@@ -20,6 +20,7 @@ import { colors, spacing, borderRadius, typography } from '../styles/theme';
 import { nameGen } from '../utils/nameGen';
 import { exportPipeline, importYaml } from '../utils/yamlTools';
 import yaml from 'js-yaml';
+import SavePipelineModal from './SavePipelineModal';
 
 export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
 
@@ -30,6 +31,7 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
     const fileInputRef = useRef(null);
     const [isImporting, setIsImporting] = useState(false);
     const [isCommitting, setIsCommitting] = useState(false);
+    const [showSavePipelineModal, setShowSavePipelineModal] = useState(false);
 
     const onDragOver = useCallback((event) => {
         event.preventDefault();
@@ -126,88 +128,66 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
         }
     }, [isInitialized, repository?.name, clearPipelineLoaded]);
 
+    const performCommit = async (pipelinePath) => {
+        const defaultMessage = currentPipelinePath
+            ? `Update ${currentPipelinePath}`
+            : `Create ${pipelinePath}`;
+        const commitMessage = prompt('Enter commit message:', defaultMessage);
+
+        if (commitMessage === null) return;
+
+        const finalCommitMessage = commitMessage.trim() || defaultMessage;
+
+        setIsCommitting(true);
+        try {
+            const pipelineYaml = exportPipeline(nodes, edges);
+            const isNewPipeline = !currentPipelinePath;
+            await updatePipeline(pipelineYaml, isNewPipeline, pipelinePath, finalCommitMessage);
+
+            if (isNewPipeline && pipelineHook?.markPipelineLoaded) {
+                pipelineHook.markPipelineLoaded(pipelinePath);
+            }
+
+            setTimeout(() => setIsCommitting(false), 500);
+        } catch (err) {
+            alert('Commit failed: ' + err.message);
+            setIsCommitting(false);
+        }
+    };
+
     const onClickCommit = async () => {
         if (!isInitialized) {
             alert('Please initialize a repository first');
             return;
         }
-        
-        // Allow commit even if pipeline not explicitly loaded (for new pipelines)
-        // But require at least some nodes/edges to be meaningful
+
         if (nodes.length === 0 && edges.length === 0) {
             alert('Please add at least one node to the pipeline before committing.');
             return;
         }
-        
-        // If creating a new pipeline, prompt for filename
-        let pipelinePath = currentPipelinePath;
-        if (!pipelinePath) {
-            const fileName = prompt('Enter filename for the pipeline (e.g., pipeline.yaml):', 'pipeline.yaml');
-            if (!fileName) {
-                // User cancelled
-                return;
-            }
-            
-            // Validate and sanitize filename
-            let sanitized = fileName.trim();
-            if (!sanitized) {
-                alert('Filename cannot be empty');
-                return;
-            }
-            
-            // Ensure it ends with .yaml or .yml
-            if (!sanitized.endsWith('.yaml') && !sanitized.endsWith('.yml')) {
-                sanitized += '.yaml';
-            }
-            
-            // Basic validation: no path separators (for now, save in root)
-            if (sanitized.includes('/') || sanitized.includes('\\')) {
-                alert('Filename cannot contain path separators. Please enter just the filename.');
-                return;
-            }
-            
-            pipelinePath = sanitized;
-        }
-        
-        // Prompt for commit message
-        const defaultMessage = currentPipelinePath 
-            ? `Update ${currentPipelinePath}`
-            : `Create ${pipelinePath}`;
-        const commitMessage = prompt('Enter commit message:', defaultMessage);
-        
-        // If user cancelled, abort commit
-        if (commitMessage === null) {
+
+        // If creating a new pipeline, open Save As modal (destination + name)
+        if (!currentPipelinePath) {
+            setShowSavePipelineModal(true);
             return;
         }
-        
-        // Use default message if user provided empty string
-        const finalCommitMessage = commitMessage.trim() || defaultMessage;
-        
-        setIsCommitting(true);
-        try {
-            const pipelineYaml = exportPipeline(nodes, edges);
-            // If currentPipelinePath is null, we're creating a new pipeline
-            // Otherwise, we're updating an existing one
-            const isNewPipeline = !currentPipelinePath;
-            await updatePipeline(pipelineYaml, isNewPipeline, pipelinePath, finalCommitMessage);
-            
-            // If this was a new pipeline, mark it as loaded with the provided path
-            if (isNewPipeline && pipelineHook?.markPipelineLoaded) {
-                pipelineHook.markPipelineLoaded(pipelinePath);
-            }
-            
-            // Show success feedback
-            setTimeout(() => {
-                setIsCommitting(false);
-            }, 500);
-        } catch (err) {
-            alert("Commit failed: " + err.message);
-            setIsCommitting(false);
-        }
+
+        await performCommit(currentPipelinePath);
+    };
+
+    const handleSavePipelineConfirm = (pipelinePath) => {
+        setShowSavePipelineModal(false);
+        performCommit(pipelinePath);
     };
 
     return (
         <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+            <SavePipelineModal
+                isOpen={showSavePipelineModal}
+                onClose={() => setShowSavePipelineModal(false)}
+                onConfirm={handleSavePipelineConfirm}
+                repositoryHook={repositoryHook}
+            />
             {/* Toolbar */}
             <div style={toolbarStyles.container}>
                 <div style={toolbarStyles.group}>
@@ -244,7 +224,7 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
                                 ? "Initialize a repository first" 
                                 : currentPipelinePath
                                     ? `Update ${currentPipelinePath} in repository`
-                                    : "Create pipeline.yaml in repository"
+                                    : "Choose location and name for new pipeline (Save As)"
                         }
                     >
                         <GitCommit size={16} style={{ marginRight: spacing.sm }} />
