@@ -113,8 +113,14 @@ export default function useRepository() {
 
     const removeRepository = async (name) => {
         try {
-            // Delete from BrowserFS registry (this also deletes the IndexedDB store)
-            await deleteRepository(name);
+            const isDeletingCurrent = repository?.name === name;
+            // If deleting the currently open repo, clear it first so nothing holds a reference
+            // to its IndexedDB store. Then deleteRepository can release the connection and delete.
+            if (isDeletingCurrent) {
+                clearRepository();
+            }
+            // Delete from BrowserFS (pass isDeletingCurrent so we release the store before delete)
+            await deleteRepository(name, isDeletingCurrent);
             
             // Also delete templates for this repository
             try {
@@ -122,14 +128,9 @@ export default function useRepository() {
                 await deleteTemplatesForRepo(name);
             } catch (error) {
                 console.warn('Failed to delete templates for repository:', error);
-                // Don't fail the entire operation if template deletion fails
             }
             
             await refreshRepositoryList();
-            // If the current repository is being deleted, clear it
-            if (repository?.name === name) {
-                clearRepository();
-            }
         } catch (error) {
             console.error('Failed to delete repository:', error);
             throw error;

@@ -289,8 +289,7 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
     const getFileContent = async (filePath) => {
         if (!gitCtx || !repository) return '';
         
-        const { fs, path } = gitCtx;
-        const repoDir = '/';
+        const { fs, path, dir: repoDir } = gitCtx;
         
         try {
             // Read file directly from BrowserFS
@@ -335,8 +334,7 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
                 return;
             }
 
-            const { fs, path } = gitCtx;
-            const repoDir = '/';
+            const { fs, path, dir: repoDir } = gitCtx;
 
             const readDir = async (dirPath, parentPath = '') => {
                 const items = [];

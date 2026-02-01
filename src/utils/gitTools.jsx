@@ -5,25 +5,47 @@ import * as BrowserFSRaw from 'browserfs';
 // BrowserFS can export as default or namespace depending on bundler; normalize here
 const BrowserFS = BrowserFSRaw.default || BrowserFSRaw;
 
-// Initialize BrowserFS with IndexedDB backend for a specific repository
-async function initBrowserFS(repoName) {
-    return new Promise((resolve, reject) => {
-        BrowserFS.configure({
-            fs: "IndexedDB",
-            options: {
-                storeName: `git-repo-${repoName}` // Unique store for each repo
+// Single IndexedDB store for all repos; each repo lives under /${repoName}/
+const REPOS_STORE_NAME = 'repos';
+
+let browserFSInitPromise = null;
+
+// Ensure BrowserFS is initialized once with the single repos store. All repo operations use
+// the same FS and path convention: repo root = /${repoName}/
+async function ensureBrowserFS() {
+    if (browserFSInitPromise) return browserFSInitPromise;
+    browserFSInitPromise = new Promise((resolve, reject) => {
+        const fsModule = BrowserFS.BFSRequire('fs');
+        if (fsModule.getRootFS()) {
+            // Already configured (e.g. by a previous call that raced)
+            const path = BrowserFS.BFSRequire('path');
+            if (typeof globalThis.Buffer === 'undefined') {
+                globalThis.Buffer = BrowserFS.BFSRequire('buffer').Buffer;
             }
+            return resolve({ fs: fsModule, path });
+        }
+        BrowserFS.configure({
+            fs: 'IndexedDB',
+            options: { storeName: REPOS_STORE_NAME }
         }, (e) => {
-            if (e) return reject(e);
+            if (e) {
+                browserFSInitPromise = null;
+                return reject(e);
+            }
             const fs = BrowserFS.BFSRequire('fs');
             const path = BrowserFS.BFSRequire('path');
-            // Make Buffer available globally for isomorphic-git
             if (typeof globalThis.Buffer === 'undefined') {
                 globalThis.Buffer = BrowserFS.BFSRequire('buffer').Buffer;
             }
             resolve({ fs, path });
         });
     });
+    return browserFSInitPromise;
+}
+
+// Repo root path for a given repo name (single FS, path-based namespacing)
+function getRepoDir(pathMod, repoName) {
+    return pathMod.join('/', repoName);
 }
 
 // Promise wrappers around BrowserFS (callback-style) APIs
@@ -32,6 +54,8 @@ const pMkdir = (fs, p) => new Promise((res, rej) => fs.mkdir(p, { recursive: tru
 const pReaddir = (fs, p) => new Promise((res, rej) => fs.readdir(p, (err, files) => err ? rej(err) : res(files)));
 const pWriteFile = (fs, p, data) => new Promise((res, rej) => fs.writeFile(p, data, (err) => err ? rej(err) : res()));
 const pReadFile = (fs, p) => new Promise((res, rej) => fs.readFile(p, (err, data) => err ? rej(err) : res(data)));
+const pUnlink = (fs, p) => new Promise((res, rej) => fs.unlink(p, (err) => (err ? rej(err) : res())));
+const pRmdir = (fs, p) => new Promise((res, rej) => fs.rmdir(p, (err) => (err ? rej(err) : res())));
 
 async function ensureDir(fs, pathMod, dir) {
     const parts = dir.split('/').filter(Boolean);
@@ -132,11 +156,10 @@ async function getAllFiles(fs, pathMod, baseDir) {
 export async function hasPipelineFile(gitCtx) {
     if (!gitCtx) return false;
     
-    const { fs, path } = gitCtx;
-    const repoDir = '/';
+    const { fs, path, dir } = gitCtx;
     
     try {
-        const allFiles = await getAllFiles(fs, path, repoDir);
+        const allFiles = await getAllFiles(fs, path, dir);
         
         // Check YAML files for pipeline structure
         for (const filePath of allFiles) {
@@ -229,8 +252,8 @@ async function loadRepositoryFromFS(fs, pathMod, repoDir, repoName) {
 
 // Clone git repository from GitHub
 export async function cloneGitRepository(repoName, gitUrl, keepConnected = true, token = null) {
-    const { fs, path } = await initBrowserFS(repoName);
-    const repoDir = '/';
+    const { fs, path } = await ensureBrowserFS();
+    const repoDir = getRepoDir(path, repoName);
 
     await ensureDir(fs, path, repoDir);
 
@@ -298,8 +321,8 @@ export async function cloneGitRepository(repoName, gitUrl, keepConnected = true,
 
 // Initialize git repository (per repo directory under /)
 export async function initGitRepository(repository, existingGit = false) {
-    const { fs, path } = await initBrowserFS(repository.name);
-    const repoDir = '/';
+    const { fs, path } = await ensureBrowserFS();
+    const repoDir = getRepoDir(path, repository.name);
 
     await ensureDir(fs, path, repoDir);
 
@@ -467,8 +490,8 @@ export async function ensureGitConfig(gitCtx) {
 // Check if Git repository already exists
 export async function gitRepositoryExists(repository) {
     try {
-        const { fs, path } = await initBrowserFS(repository.name);
-        const repoDir = '/';
+        const { fs, path } = await ensureBrowserFS();
+        const repoDir = getRepoDir(path, repository.name);
         try {
             const stat = await pStat(fs, path.join(repoDir, '.git'));
             return stat.isDirectory();
@@ -543,8 +566,8 @@ export async function listRepositories() {
 // Load a repository by name from BrowserFS
 export async function loadRepository(repoName) {
     try {
-        const { fs, path } = await initBrowserFS(repoName);
-        const repoDir = '/';
+        const { fs, path } = await ensureBrowserFS();
+        const repoDir = getRepoDir(path, repoName);
         const repository = await loadRepositoryFromFS(fs, path, repoDir, repoName);
         return repository;
     } catch (error) {
@@ -553,42 +576,42 @@ export async function loadRepository(repoName) {
     }
 }
 
-// Delete a repository
-export async function deleteRepository(repoName) {
+// Recursively remove a directory and all its contents (for repo deletion)
+async function removeRecursive(fs, pathMod, dirPath) {
+    let entries = [];
     try {
-        // Remove from localStorage list first
+        entries = await pReaddir(fs, dirPath);
+    } catch (e) {
+        return; // dir doesn't exist or not a directory
+    }
+    for (const entry of entries) {
+        const fullPath = pathMod.join(dirPath, entry);
+        try {
+            const stat = await pStat(fs, fullPath);
+            if (stat.isDirectory()) {
+                await removeRecursive(fs, pathMod, fullPath);
+                await pRmdir(fs, fullPath);
+            } else {
+                await pUnlink(fs, fullPath);
+            }
+        } catch (e) {
+            console.warn(`Could not remove ${fullPath}:`, e);
+        }
+    }
+}
+
+// Delete a repository (remove its directory tree from the single store)
+export async function deleteRepository(repoName, _isDeletingCurrentRepo = false) {
+    try {
+        const { fs, path } = await ensureBrowserFS();
+        const repoDir = getRepoDir(path, repoName);
+        await removeRecursive(fs, path, repoDir);
+        try {
+            await pRmdir(fs, repoDir);
+        } catch (e) {
+            // repoDir might not exist if repo was never created
+        }
         removeRepoFromList(repoName);
-        
-        // Delete the IndexedDB database used by BrowserFS for this repository
-        // BrowserFS IndexedDB backend uses the store name as the database name
-        const dbName = `git-repo-${repoName}`;
-        
-        // Note: BrowserFS doesn't provide a method to delete an entire filesystem.
-        // We must use IndexedDB API directly. If the database is currently open,
-        // we'll get a 'blocked' event, but the deletion will proceed once connections close.
-        await new Promise((resolve, reject) => {
-            const deleteRequest = indexedDB.deleteDatabase(dbName);
-            
-            deleteRequest.onsuccess = () => {
-                console.log(`Successfully deleted IndexedDB database: ${dbName}`);
-                resolve();
-            };
-            
-            deleteRequest.onerror = () => {
-                console.error(`Error deleting IndexedDB database ${dbName}:`, deleteRequest.error);
-                // Don't fail the entire operation - repo is already removed from list
-                // The IndexedDB data will remain but won't be accessible
-                resolve();
-            };
-            
-            deleteRequest.onblocked = () => {
-                // Database is currently open (e.g., repository is loaded)
-                // The deletion will proceed automatically once all connections close
-                console.warn(`IndexedDB database ${dbName} deletion blocked (connections open). Will delete when closed.`);
-                resolve();
-            };
-        });
-        
         return true;
     } catch (error) {
         console.error('Error deleting repository:', error);
