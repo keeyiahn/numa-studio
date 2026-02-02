@@ -521,6 +521,26 @@ export async function ensureGitConfig(gitCtx) {
     }
 }
 
+// Check if a repository with the given name already exists (dir or in registry)
+export async function repoNameExists(repoName) {
+    if (!repoName || typeof repoName !== 'string' || !repoName.trim()) return false;
+    const name = repoName.trim();
+    try {
+        const reposList = getReposList();
+        if (reposList.some(r => r.name === name)) return true;
+        const { fs, path } = await ensureBrowserFS();
+        const repoDir = getRepoDir(path, name);
+        try {
+            const stat = await pStat(fs, repoDir);
+            return stat.isDirectory();
+        } catch {
+            return false;
+        }
+    } catch {
+        return false;
+    }
+}
+
 // Check if Git repository already exists
 export async function gitRepositoryExists(repository) {
     try {

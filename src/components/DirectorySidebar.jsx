@@ -31,23 +31,25 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
 
     const handleInitialize = async () => {
         if (repoName.trim()) {
-            const newRepo = await initializeRepository(repoName.trim());
-            setRepoName('');
-            setShowInitModal(false);
-            
-            // Auto-load empty pipeline template for new repository
-            if (!newRepo.hasPipelineFile && pipelineHook) {
-                const { setNodes, setEdges, markPipelineLoaded } = pipelineHook;
-                if (setNodes && setEdges) {
-                    // Import empty template
-                    const { getEmptyPipelineTemplate, importYamlFromString } = await import('../utils/yamlTools');
-                    const emptyTemplate = getEmptyPipelineTemplate();
-                    importYamlFromString(emptyTemplate, setNodes, setEdges);
-                    // Mark as loaded but with null path (new pipeline, not from file)
-                    if (markPipelineLoaded) {
-                        markPipelineLoaded(null);
+            try {
+                const newRepo = await initializeRepository(repoName.trim());
+                setRepoName('');
+                setShowInitModal(false);
+
+                // Auto-load empty pipeline template for new repository
+                if (!newRepo.hasPipelineFile && pipelineHook) {
+                    const { setNodes, setEdges, markPipelineLoaded } = pipelineHook;
+                    if (setNodes && setEdges) {
+                        const { getEmptyPipelineTemplate, importYamlFromString } = await import('../utils/yamlTools');
+                        const emptyTemplate = getEmptyPipelineTemplate();
+                        importYamlFromString(emptyTemplate, setNodes, setEdges);
+                        if (markPipelineLoaded) {
+                            markPipelineLoaded(null);
+                        }
                     }
                 }
+            } catch (error) {
+                alert('Failed to initialize repository: ' + error.message);
             }
         }
     };

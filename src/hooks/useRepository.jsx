@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { initGitRepository, cloneGitRepository, updateGitRepository, gitRepositoryExists, listRepositories, loadRepository, deleteRepository, hasPipelineFile, getFileTree, createGitHubRepo, addRemote, pushToGitHub, pullFromGitHub, storeGitHubToken, getGitHubToken, hasRemote, getRemoteUrl, extractTokenFromRemote } from '../utils/gitTools';
+import { initGitRepository, cloneGitRepository, updateGitRepository, gitRepositoryExists, repoNameExists, listRepositories, loadRepository, deleteRepository, hasPipelineFile, getFileTree, createGitHubRepo, addRemote, pushToGitHub, pullFromGitHub, storeGitHubToken, getGitHubToken, hasRemote, getRemoteUrl, extractTokenFromRemote } from '../utils/gitTools';
 
 export default function useRepository() {
     const [repository, setRepository] = useState(null);
@@ -25,6 +25,9 @@ export default function useRepository() {
     };
 
     const initializeRepository = async (name) => {
+        if (await repoNameExists(name)) {
+            throw new Error('A repository with this name already exists.');
+        }
         const newRepo = {
             name: name,
             pipeline: null,
@@ -53,6 +56,9 @@ export default function useRepository() {
     };
 
     const cloneRepository = async (name, gitUrl, keepConnected = true, token = null) => {
+        if (await repoNameExists(name)) {
+            throw new Error('A repository with this name already exists.');
+        }
         const doClone = async (t) => {
             const ctx = await cloneGitRepository(name, gitUrl, keepConnected, t);
             if (keepConnected && typeof t === 'string' && t?.trim()) storeGitHubToken(name, t.trim());
