@@ -1,21 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Folder, FolderOpen, ChevronRight, ChevronDown, FileText } from 'lucide-react';
+import { Folder, FolderOpen, ChevronRight, ChevronDown, FileText, FileCode } from 'lucide-react';
 import { modalStyles, inputStyles, buttonStyles, fileTreeStyles } from '../styles/components';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
 import { hoverHandlers } from '../styles/hoverUtils';
 
 /**
- * Save-as style modal: user picks a folder destination in the repo tree and a pipeline filename.
- * onConfirm(fullPipelinePath) is called with e.g. "pipelines/main.yaml" or "pipeline.yaml".
+ * Save-as style modal: user picks a folder destination in the repo tree.
+ * - mode 'pipeline': also pick a pipeline filename. onConfirm(fullPipelinePath)
+ * - mode 'script': filenames derived from scriptName. onConfirm(directoryPath) for <scriptName>.py and Dockerfile.<scriptName>
  */
-export default function SavePipelineModal({ isOpen, onClose, onConfirm, repositoryHook }) {
-    const { repository, loadFileTree } = repositoryHook || {};
+export default function SaveFileModal({ isOpen, onClose, onConfirm, repositoryHook, mode = 'pipeline', scriptName = '' }) {
+    const { loadFileTree } = repositoryHook || {};
     const [fileTree, setFileTree] = useState([]);
     const [expandedFolders, setExpandedFolders] = useState(new Set());
     const [selectedFolderPath, setSelectedFolderPath] = useState(''); // '' = repo root
     const [pipelineName, setPipelineName] = useState('pipeline.yaml');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+
+    const sanitizedScriptName = (scriptName || '').replace(/[^a-zA-Z0-9-_]/g, '_') || 'script';
+    const scriptPyPath = selectedFolderPath ? `${selectedFolderPath}/${sanitizedScriptName}.py` : `${sanitizedScriptName}.py`;
+    const scriptDockerfilePath = selectedFolderPath ? `${selectedFolderPath}/Dockerfile.${sanitizedScriptName}` : `Dockerfile.${sanitizedScriptName}`;
 
     useEffect(() => {
         if (isOpen && loadFileTree) {
@@ -51,21 +56,32 @@ export default function SavePipelineModal({ isOpen, onClose, onConfirm, reposito
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        let name = pipelineName.trim();
-        if (!name) {
-            setError('Pipeline name cannot be empty');
-            return;
+        if (mode === 'pipeline') {
+            let name = pipelineName.trim();
+            if (!name) {
+                setError('Pipeline name cannot be empty');
+                return;
+            }
+            if (!name.endsWith('.yaml') && !name.endsWith('.yml')) {
+                name += '.yaml';
+            }
+            if (name.includes('/') || name.includes('\\')) {
+                setError('Pipeline name cannot contain path separators');
+                return;
+            }
+            setError(null);
+            const finalPath = selectedFolderPath ? `${selectedFolderPath}/${name}` : name;
+            onConfirm(finalPath);
+        } else {
+            // script mode
+            if (!sanitizedScriptName) {
+                setError('Script name cannot be empty');
+                return;
+            }
+            setError(null);
+            const dirPath = selectedFolderPath || '.';
+            onConfirm(dirPath);
         }
-        if (!name.endsWith('.yaml') && !name.endsWith('.yml')) {
-            name += '.yaml';
-        }
-        if (name.includes('/') || name.includes('\\')) {
-            setError('Pipeline name cannot contain path separators');
-            return;
-        }
-        setError(null);
-        const finalPath = selectedFolderPath ? `${selectedFolderPath}/${name}` : name;
-        onConfirm(finalPath);
         onClose();
     };
 
@@ -124,6 +140,13 @@ export default function SavePipelineModal({ isOpen, onClose, onConfirm, reposito
         );
     };
 
+    const isScript = mode === 'script';
+    const Icon = isScript ? FileCode : FileText;
+    const title = isScript ? 'Save script as' : 'Save pipeline as';
+    const description = isScript
+        ? 'Choose where to save the script and Dockerfile in the repository.'
+        : 'Choose where to save the pipeline in the repository and give it a name.';
+
     return (
         <div style={modalStyles.overlay} onClick={onClose}>
             <div
@@ -135,11 +158,11 @@ export default function SavePipelineModal({ isOpen, onClose, onConfirm, reposito
                 onClick={(e) => e.stopPropagation()}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm }}>
-                    <FileText size={24} style={{ color: colors.primary }} />
-                    <h2 style={modalStyles.title}>Save pipeline as</h2>
+                    <Icon size={24} style={{ color: colors.primary }} />
+                    <h2 style={modalStyles.title}>{title}</h2>
                 </div>
                 <p style={{ ...modalStyles.description, marginBottom: spacing.lg }}>
-                    Choose where to save the pipeline in the repository and give it a name.
+                    {description}
                 </p>
 
                 {loading ? (
@@ -176,23 +199,31 @@ export default function SavePipelineModal({ isOpen, onClose, onConfirm, reposito
                             </div>
                         </div>
 
-                        <div>
-                            <label htmlFor="save-pipeline-name" style={{ ...inputStyles.label, display: 'block', marginBottom: spacing.sm }}>
-                                Pipeline name
-                            </label>
-                            <input
-                                id="save-pipeline-name"
-                                type="text"
-                                value={pipelineName}
-                                onChange={(e) => setPipelineName(e.target.value)}
-                                placeholder="pipeline.yaml"
-                                style={inputStyles.input}
-                                autoFocus
-                            />
-                            <p style={{ marginTop: spacing.xs, fontSize: typography.fontSize.sm, color: colors.text.tertiary }}>
-                                Will save to: <strong style={{ color: colors.text.secondary }}>{fullPath}</strong>
-                            </p>
-                        </div>
+                        {isScript ? (
+                            <div>
+                                <p style={{ marginTop: spacing.xs, fontSize: typography.fontSize.sm, color: colors.text.tertiary }}>
+                                    Will save: <strong style={{ color: colors.text.secondary }}>{scriptPyPath}</strong> and <strong style={{ color: colors.text.secondary }}>{scriptDockerfilePath}</strong>
+                                </p>
+                            </div>
+                        ) : (
+                            <div>
+                                <label htmlFor="save-pipeline-name" style={{ ...inputStyles.label, display: 'block', marginBottom: spacing.sm }}>
+                                    Pipeline name
+                                </label>
+                                <input
+                                    id="save-pipeline-name"
+                                    type="text"
+                                    value={pipelineName}
+                                    onChange={(e) => setPipelineName(e.target.value)}
+                                    placeholder="pipeline.yaml"
+                                    style={inputStyles.input}
+                                    autoFocus
+                                />
+                                <p style={{ marginTop: spacing.xs, fontSize: typography.fontSize.sm, color: colors.text.tertiary }}>
+                                    Will save to: <strong style={{ color: colors.text.secondary }}>{fullPath}</strong>
+                                </p>
+                            </div>
+                        )}
 
                         {error && (
                             <p style={{ color: colors.danger, fontSize: typography.fontSize.sm, margin: 0 }}>
@@ -214,7 +245,7 @@ export default function SavePipelineModal({ isOpen, onClose, onConfirm, reposito
                                 style={buttonStyles.success}
                                 {...hoverHandlers.successButton}
                             >
-                                Save pipeline
+                                {isScript ? 'Save script' : 'Save pipeline'}
                             </button>
                         </div>
                     </form>

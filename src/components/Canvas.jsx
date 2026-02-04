@@ -20,7 +20,7 @@ import { colors, spacing, borderRadius, typography } from '../styles/theme';
 import { nameGen } from '../utils/nameGen';
 import { exportPipeline, importYaml } from '../utils/yamlTools';
 import yaml from 'js-yaml';
-import SavePipelineModal from './SavePipelineModal';
+import SaveFileModal from './SaveFileModal';
 
 export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
 
@@ -182,11 +182,12 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
 
     return (
         <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-            <SavePipelineModal
+            <SaveFileModal
                 isOpen={showSavePipelineModal}
                 onClose={() => setShowSavePipelineModal(false)}
                 onConfirm={handleSavePipelineConfirm}
                 repositoryHook={repositoryHook}
+                mode="pipeline"
             />
             {/* Toolbar */}
             <div style={toolbarStyles.container}>

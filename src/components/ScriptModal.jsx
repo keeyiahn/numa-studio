@@ -1,9 +1,8 @@
 import { Editor } from '@monaco-editor/react';
-import { parseYaml, loadYaml } from '../utils/yamlTools';
 import { useState, useEffect } from 'react';
-import yaml from 'js-yaml';
-import { Download } from 'lucide-react';
+import { Download, GitCommit } from 'lucide-react';
 import { modalStyles, buttonStyles, inputStyles } from '../styles/components';
+import SaveFileModal from './SaveFileModal';
 import { hoverHandlers } from '../styles/hoverUtils';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
@@ -52,6 +51,7 @@ export default function ScriptModal({ scriptModalHook, scriptsHook, repositoryHo
 
     const [ text, setText ] = useState(modalContent);
     const [scriptType, setScriptType] = useState('map');
+    const [showSaveFileModal, setShowSaveFileModal] = useState(false);
 
     // Get the current script type for existing scripts
     const currentScriptType = type === 'new script' ? null : type;
@@ -95,24 +95,34 @@ export default function ScriptModal({ scriptModalHook, scriptsHook, repositoryHo
             // Edit existing script - editScript expects (id, newId, newConfig)
             const currentType = scripts[id]?.type || 'map';
             editScript(id, newId, text);
-            // Update repository if initialized
-            if (repositoryHook?.isInitialized) {
-                const scriptData = {
-                    type: currentType,
-                    data: text
-                };
-                if (id !== newId) {
-                    // Name changed, remove old and add new
-                    await repositoryHook.removeScript(id);
-                    await repositoryHook.addScript(newId, scriptData);
-                } else {
-                    // Just update the script data
-                    await repositoryHook.addScript(newId, scriptData);
-                }
-            }
+
         }
 
         closeModal();
+    };
+
+    const handleCreateClick = () => {
+        const scriptName = (type === 'new script' ? newId : id || newId).trim();
+        if (!scriptName) {
+            alert('Please enter a script name first.');
+            return;
+        }
+        setShowSaveFileModal(true);
+    };
+
+    const handleSaveFileConfirm = async (directoryPath) => {
+        const scriptName = (type === 'new script' ? newId : id || newId).trim();
+        const scriptData = { type: type === 'new script' ? scriptType : (scripts[id]?.type || 'map'), data: text };
+        try {
+            await repositoryHook.saveScriptToRepositoryPath(scriptName, scriptData, directoryPath);
+            if (type === 'new script') {
+                addScript(scriptName, scriptData.type, text);
+            }
+            setShowSaveFileModal(false);
+            closeModal();
+        } catch (err) {
+            alert('Failed to save script: ' + err.message);
+        }
     };
 
     const generateDockerfile = (scriptName) => {
@@ -163,10 +173,21 @@ CMD ["python", "-u","${scriptName}.py"]
         }, 300);
     };
 
-    if (!isOpen) return null;    
-    
+    if (!isOpen) return null;
+
+    const scriptNameForCreate = (type === 'new script' ? newId : id || newId).trim();
+    const canCreate = repositoryHook?.isInitialized && scriptNameForCreate;
+
     return (
         <div style={modalStyles.overlay}>
+            <SaveFileModal
+                isOpen={showSaveFileModal}
+                onClose={() => setShowSaveFileModal(false)}
+                onConfirm={handleSaveFileConfirm}
+                repositoryHook={repositoryHook}
+                mode="script"
+                scriptName={scriptNameForCreate}
+            />
           <div style={{ ...modalStyles.container, ...modalStyles.containerLarge }}>
             <input
                 value={newId}
@@ -276,6 +297,17 @@ CMD ["python", "-u","${scriptName}.py"]
               >
                 Cancel
               </button>
+              {canCreate && (
+                <button
+                  onClick={handleCreateClick}
+                  style={buttonStyles.success}
+                  title="Save script and Dockerfile to chosen directory in repository"
+                  {...hoverHandlers.successButton}
+                >
+                  <GitCommit size={16} style={{ marginRight: spacing.sm }} />
+                  Create
+                </button>
+              )}
               <button 
                 style={buttonStyles.primary} 
                 onClick={saveConfig}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { initGitRepository, cloneGitRepository, updateGitRepository, gitRepositoryExists, repoNameExists, listRepositories, loadRepository, deleteRepository, hasPipelineFile, getFileTree, createGitHubRepo, addRemote, pushToGitHub, pullFromGitHub, storeGitHubToken, getGitHubToken, hasRemote, getRemoteUrl, extractTokenFromRemote } from '../utils/gitTools';
+import { initGitRepository, cloneGitRepository, updateGitRepository, saveScriptToPath, gitRepositoryExists, repoNameExists, listRepositories, loadRepository, deleteRepository, hasPipelineFile, getFileTree, createGitHubRepo, addRemote, pushToGitHub, pullFromGitHub, storeGitHubToken, getGitHubToken, hasRemote, getRemoteUrl, extractTokenFromRemote } from '../utils/gitTools';
 
 export default function useRepository() {
     const [repository, setRepository] = useState(null);
@@ -222,6 +222,11 @@ export default function useRepository() {
         }
     };
 
+    const saveScriptToRepositoryPath = async (scriptName, scriptData, directoryPath) => {
+        if (!gitCtx) throw new Error('No repository initialized');
+        return saveScriptToPath(gitCtx, scriptName, scriptData, directoryPath);
+    };
+
     const removeScript = async (scriptName) => {
         if (!repository) return;
         const updatedRepo = {
@@ -415,6 +420,7 @@ export default function useRepository() {
         loadFileTree,
         syncAllScripts,
         addScript,
+        saveScriptToRepositoryPath,
         removeScript,
         addDockerfile,
         addManifest,

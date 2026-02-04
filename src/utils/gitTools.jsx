@@ -445,6 +445,29 @@ export async function addAndCommit(gitCtx, message = 'Update repository') {
     }
 }
 
+// Save script and Dockerfile to a chosen directory path in the repo
+export async function saveScriptToPath(gitCtx, scriptName, scriptData, directoryPath = '') {
+    if (!gitCtx) throw new Error('No git context');
+    const { fs, path: pathMod, dir } = gitCtx;
+    const sanitizedName = (scriptName || '').replace(/[^a-zA-Z0-9-_]/g, '_') || 'script';
+    const scriptContent = typeof scriptData === 'string' ? scriptData : (scriptData?.data ?? scriptData ?? '');
+    const dockerfileContent = `FROM python:3.10-slim
+WORKDIR /app
+COPY . /app
+RUN pip install -r requirements.txt
+CMD ["python", "-u", "${sanitizedName}.py"]`;
+
+    const baseDir = directoryPath && directoryPath !== '.' ? pathMod.join(dir, directoryPath) : dir;
+    const scriptFullPath = pathMod.join(baseDir, `${sanitizedName}.py`);
+    const dockerfileFullPath = pathMod.join(baseDir, `Dockerfile.${sanitizedName}`);
+
+    await writeFileEnsuringDir(fs, pathMod, scriptFullPath, scriptContent);
+    await writeFileEnsuringDir(fs, pathMod, dockerfileFullPath, dockerfileContent);
+
+    await addAndCommit(gitCtx, `Add script: ${sanitizedName}.py and Dockerfile.${sanitizedName}`);
+    return gitCtx;
+}
+
 // Update git repository with new repository state
 export async function updateGitRepository(gitCtx, repository, commitMessage = 'Update repository', pipelinePath = 'pipeline.yaml') {
     if (!gitCtx) {
