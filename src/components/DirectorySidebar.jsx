@@ -5,7 +5,7 @@ import { hoverHandlers } from '../styles/hoverUtils';
 import { colors, spacing, borderRadius, shadows, typography } from '../styles/theme';
 
 const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHook, scriptsHook, pipelineHook }) => {
-    const { repository, isInitialized, savedRepositories, initializeRepository, cloneRepository, openRepository, removeRepository, clearRepository, gitCtx, exportToGitHub, pushToGitHubRemote, pullFromGitHubRemote } = repositoryHook;
+    const { repository, isInitialized, savedRepositories, initializeRepository, cloneRepository, openRepository, removeRepository, clearRepository, gitCtx, fileTreeVersion, exportToGitHub, pushToGitHubRemote, pullFromGitHubRemote } = repositoryHook;
     const { openModal } = modalHook || {};
     const { setAllScripts } = scriptsHook || {};
     const [showInitModal, setShowInitModal] = useState(false);
@@ -398,7 +398,7 @@ const DirectorySidebar = ({ repositoryHook, isVisible = true, onToggle, modalHoo
         };
 
         loadFileTree();
-    }, [gitCtx, repository]);
+    }, [gitCtx, repository, fileTreeVersion]);
 
     const toggleFolder = (folderPath) => {
         setExpandedFolders(prev => {

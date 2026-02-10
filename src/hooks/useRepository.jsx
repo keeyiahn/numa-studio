@@ -6,6 +6,8 @@ export default function useRepository() {
     const [isInitialized, setIsInitialized] = useState(false);
     const [gitCtx, setGitCtx] = useState(null);
     const [savedRepositories, setSavedRepositories] = useState([]);
+    // Bump when repo files change so DirectorySidebar refetches the file tree
+    const [fileTreeVersion, setFileTreeVersion] = useState(0);
 
     // Load list of saved repositories on mount
     useEffect(() => {
@@ -169,6 +171,7 @@ export default function useRepository() {
                 : `Update ${pipelinePath}`);
             const ctx = await updateGitRepository(gitCtx, updatedRepo, message, pipelinePath);
             setGitCtx(ctx);
+            setFileTreeVersion((v) => v + 1);
         } catch (error) {
             console.error('Failed to commit pipeline changes:', error);
         }
@@ -196,6 +199,7 @@ export default function useRepository() {
         try {
             const ctx = await updateGitRepository(gitCtx, updatedRepo, 'Update UDF scripts');
             setGitCtx(ctx);
+            setFileTreeVersion((v) => v + 1);
         } catch (error) {
             console.error('Failed to commit script changes:', error);
         }
@@ -217,6 +221,7 @@ export default function useRepository() {
         try {
             const ctx = await updateGitRepository(gitCtx, updatedRepo, `Add UDF script: ${scriptName}`);
             setGitCtx(ctx);
+            setFileTreeVersion((v) => v + 1);
         } catch (error) {
             console.error('Failed to commit script addition:', error);
         }
@@ -224,7 +229,8 @@ export default function useRepository() {
 
     const saveScriptToRepositoryPath = async (scriptName, scriptData, directoryPath) => {
         if (!gitCtx) throw new Error('No repository initialized');
-        return saveScriptToPath(gitCtx, scriptName, scriptData, directoryPath);
+        await saveScriptToPath(gitCtx, scriptName, scriptData, directoryPath);
+        setFileTreeVersion((v) => v + 1);
     };
 
     const removeScript = async (scriptName) => {
@@ -246,6 +252,7 @@ export default function useRepository() {
         try {
             const ctx = await updateGitRepository(gitCtx, updatedRepo, `Remove UDF script: ${scriptName}`);
             setGitCtx(ctx);
+            setFileTreeVersion((v) => v + 1);
         } catch (error) {
             console.error('Failed to commit script removal:', error);
         }
@@ -409,6 +416,7 @@ export default function useRepository() {
     return {
         repository,
         gitCtx,
+        fileTreeVersion,
         isInitialized,
         savedRepositories,
         initializeRepository,
