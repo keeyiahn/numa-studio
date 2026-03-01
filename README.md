@@ -161,6 +161,3 @@ See `manifests/deployment-instructions.txt` for a compact copy of the build-and-
 - **js-yaml** for pipeline parsing and serialization
 - **isomorphic-git** + **BrowserFS** for repository features
 
-## License
-
-See the repository license file for terms.
