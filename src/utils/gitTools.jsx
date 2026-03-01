@@ -433,7 +433,7 @@ export async function addAndCommit(gitCtx, message = 'Update repository') {
             dir,
             message,
             author: {
-                name: 'Numaflow GUI',
+                name: 'numa-studio',
                 email: 'gui@numaflow.local'
             }
         });
@@ -505,7 +505,7 @@ export async function ensureGitConfig(gitCtx) {
                 fs,
                 dir,
                 path: 'user.name',
-                value: 'Numaflow GUI'
+                value: 'numa-studio'
             });
             // Verify it was set
             userName = await git.getConfig({ fs, dir, path: 'user.name' });
@@ -937,7 +937,7 @@ export async function pullFromGitHub(gitCtx, token, remoteName = 'origin', branc
                 authorEmail = await git.getConfig({ fs, dir, path: 'user.email' });
             } catch (e) {
                 // Fallback to defaults if config not found
-                authorName = 'Numaflow GUI';
+                authorName = 'numa-studio';
                 authorEmail = 'gui@numaflow.local';
             }
 
@@ -952,7 +952,7 @@ export async function pullFromGitHub(gitCtx, token, remoteName = 'origin', branc
                 ref: branch,
                 singleBranch: true,
                 author: {
-                    name: authorName || 'Numaflow GUI',
+                    name: authorName || 'numa-studio',
                     email: authorEmail || 'gui@numaflow.local'
                 },
                 onAuth: () => ({

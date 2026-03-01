@@ -81,16 +81,8 @@ export default function ScriptModal({ scriptModalHook, scriptsHook, repositoryHo
 
     const saveConfig = async () => {
         if (type === 'new script') {
-            // Create new script - useScripts expects (id, type, data)
+            // Create new script - only add to rightbar (not to repo)
             addScript(newId, scriptType, text);
-            // Also add to repository if initialized
-            if (repositoryHook?.isInitialized) {
-                const scriptData = {
-                    type: scriptType,
-                    data: text
-                };
-                await repositoryHook.addScript(newId, scriptData);
-            }
         } else {
             // Edit existing script - editScript expects (id, newId, newConfig)
             const currentType = scripts[id]?.type || 'map';

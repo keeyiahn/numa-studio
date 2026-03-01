@@ -81,7 +81,7 @@ export default function Canvas({ pipelineHook, modalHook, repositoryHook }) {
             ...(edge.data?.conditions ? edge.data.conditions : { conditions: {} })
           };
 
-        openModal("edge", `from: ${edge.source} to: ${edge.target}`, conditionsYaml);
+        openModal("edge", edge.id, conditionsYaml);
     }, []);
 
     const onEdgeRightClick = useCallback((event, edge) => {
